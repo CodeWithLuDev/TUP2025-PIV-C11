@@ -51,16 +51,13 @@ Accede a la carpeta: `cd TUP2025-PIV-C11`
 
 ### 2️⃣ Cambiar a tu rama personal
 
-Cada alumno tiene su propia rama creada con el formato:
+Cada alumno crea su rama siguiendo la convención:
 ```bash
-alumno/<Legajo>-<Nombre>-<Apellido>
-```
-- Ejemplo para `59706 - Albornoz Guevara Benjamin`:
-```bash
-git checkout alumno/59706-Albornoz-Guevara-Benjamin
+git checkout -b alumno/59706-Albornoz-Guevara-Benjamin
+git push -u origin alumno/59706-Albornoz-Guevara-Benjamin
 ```
 
-⚠️ IMPORTANTE: Siempre trabajen en su rama personal, no en main.
+⚠️ **IMPORTANTE: Siempre trabajen en su rama personal, no en main.**
 
 ### 3️⃣ Mantener la rama actualizada
 
@@ -78,7 +75,7 @@ Si hay conflictos, resolvelos antes de seguir.
 
 1. Agregá tus archivos en la carpeta correcta:
 ```bash
-TP/59706 - Albornoz Guevara Benjamin/Unidad 3/TP1/
+TPs/59706 - Albornoz Guevara Benjamin/Unidad 3/TP1/
 ```
 
 2. Hacé commit y push:
