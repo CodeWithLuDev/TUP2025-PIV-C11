@@ -1,12 +1,6 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 
-app = FastAPI()
-
-@app.get("/")
-def root():
-    return {"mensaje": "Bienvenido a la Agenda de Contactos API"}
-
-from fastapi import HTTPException  
+app = FastAPI(title="Agenda de Contactos – TP1")
 
 AGENDA = [
     {"nombre": "Juan",  "apellido": "Pérez",     "edad": 30, "telefono": "3815551234", "email": "juan.perez@example.com"},
@@ -14,12 +8,16 @@ AGENDA = [
     {"nombre": "María", "apellido": "López",     "edad": 28, "telefono": "3815551236", "email": "maria.lopez@example.com"},
     {"nombre": "Ana",   "apellido": "Martínez",  "edad": 22, "telefono": "3815551237", "email": "ana.martinez@example.com"},
     {"nombre": "Luis",  "apellido": "Rodríguez", "edad": 35, "telefono": "3815551238", "email": "luis.rodriguez@example.com"},
-    {"nombre": "Sofía", "apellido": "Medina",    "edad": 27, "telefono": "3815551239", "email": "sofia.medina@example.com"},
-    {"nombre": "Pedro", "apellido": "Rojas",     "edad": 32, "telefono": "3815551240", "email": "pedro.rojas@example.com"},
-    {"nombre": "Lucía", "apellido": "Ferreyra",  "edad": 24, "telefono": "3815551241", "email": "lucia.ferreyra@example.com"},
-    {"nombre": "Diego", "apellido": "Sosa",      "edad": 29, "telefono": "3815551242", "email": "diego.sosa@example.com"},
-    {"nombre": "Carla", "apellido": "Álvarez",   "edad": 26, "telefono": "3815551243", "email": "carla.alvarez@example.com"},
+    {"nombre": "Carlos","apellido": "Sosa",      "edad": 41, "telefono": "3815551239", "email": "carlos.sosa@example.com"},
+    {"nombre": "Lucía", "apellido": "Ramos",     "edad": 19, "telefono": "3815551240", "email": "lucia.ramos@example.com"},
+    {"nombre": "Sofía", "apellido": "Ruiz",      "edad": 33, "telefono": "3815551241", "email": "sofia.ruiz@example.com"},
+    {"nombre": "Pablo", "apellido": "Cruz",      "edad": 27, "telefono": "3815551242", "email": "pablo.cruz@example.com"},
+    {"nombre": "Marta", "apellido": "Vega",      "edad": 29, "telefono": "3815551243", "email": "marta.vega@example.com"},
 ]
+
+@app.get("/")
+def root():
+    return {"mensaje": "Bienvenido a la Agenda de Contactos API"}
 
 @app.get("/contactos")
 def listar_contactos():
@@ -27,6 +25,6 @@ def listar_contactos():
 
 @app.get("/contactos/{idx}")
 def obtener_contacto(idx: int):
-    if idx < 0 or idx >= len(AGENDA):
-        raise HTTPException(status_code=404, detail="Contacto no encontrado")
-    return AGENDA[idx]
+    if 0 <= idx < len(AGENDA):
+        return AGENDA[idx]
+    raise HTTPException(status_code=404, detail="Contacto no encontrado")
