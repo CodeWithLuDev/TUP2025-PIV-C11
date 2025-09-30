@@ -2,7 +2,7 @@ from fastapi import FastAPI, HTTPException
 
 app = FastAPI()
 
-# Datos estáticos (10 contactos)
+
 agenda = [
     {"nombre": "Juan", "apellido": "Pérez", "edad": 30, "telefono": "111-111", "email": "juan@mail.com"},
     {"nombre": "Ana", "apellido": "García", "edad": 25, "telefono": "222-222", "email": "ana@mail.com"},
@@ -16,17 +16,16 @@ agenda = [
     {"nombre": "Valeria", "apellido": "Torres", "edad": 27, "telefono": "101-101", "email": "valeria@mail.com"}
 ]
 
-# Endpoint raíz
+
 @app.get("/")
 def read_root():
     return {"mensaje": "Bienvenido a la Agenda de Contactos"}
 
-# Endpoint para listar todos los contactos
+
 @app.get("/contactos")
 def get_contactos():
     return agenda
 
-# Endpoint para obtener un contacto por índice
 @app.get("/contactos/{contacto_id}")
 def get_contacto(contacto_id: int):
     if 0 <= contacto_id < len(agenda):
