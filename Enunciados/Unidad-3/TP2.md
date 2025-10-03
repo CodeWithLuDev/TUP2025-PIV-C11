@@ -83,12 +83,10 @@ El trabajo debe presentarse hasta el 10 de OCTUBRE de 2025 a las 21:00hs.
 ## Testeo del práctico
 1. **Instalar dependencias**:
 
-    Crea un entorno virtual (opcional, pero recomendado) e instala las dependencias requeridas:
+    Instala las dependencias requeridas:
 
     ```bash
-    python -m venv venv # Crea el entorno
-    venv\Scripts\activate # Lo activa
-    pip install pytest requests # Instala las librerias en el entorno
+    pip install pytest requests httpx # Instala las librerias en el entorno
     ```
 
 2. **Verificar la estructura del proyecto**:
