@@ -67,7 +67,7 @@ Antes de comenzar a trabajar, sincronizá tu rama con **main** para asegurarte d
 git checkout main
 git pull origin main
 git checkout alumno/59706-Albornoz-Guevara-Benjamin
-git merge main
+git merge main -m "explicacion del porque del mergeo"
 ```
 Si hay conflictos, resolvelos antes de seguir.
 
