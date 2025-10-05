@@ -31,7 +31,7 @@ class Tarea(BaseModel):
 app = FastAPI(title="Mini API de Tareas", description="API para gestionar tareas con FastAPI")
 
 # Almacenamiento en memoria: lista de tareas
-tareas: List[Tarea] = []
+tareas_db: List[Tarea] = []
 contador_id = 1  # Para generar IDs autoincrementales
 
 # Ruta raíz opcional para redirigir a /docs (mejora la experiencia)
@@ -45,7 +45,7 @@ async def obtener_tareas(
     estado: Optional[EstadoTarea] = Query(None, description="Filtrar por estado: pendiente, en_progreso, completada"),
     texto: Optional[str] = Query(None, description="Buscar tareas que contengan este texto en la descripción")
 ):
-    resultado = tareas
+    resultado = tareas_db
     if estado:
         resultado = [tarea for tarea in resultado if tarea.estado == estado]
     if texto:
@@ -59,14 +59,14 @@ async def crear_tarea(tarea_data: TareaCreate):
     # Validar que después de strip() la descripción no sea vacía
     descripcion_limpia = tarea_data.descripcion.strip()
     if not descripcion_limpia:
-        raise HTTPException(status_code=400, detail={"error": "La descripción no puede ser solo espacios en blanco"})
+        raise HTTPException(status_code=422, detail={"error": "La descripción no puede ser solo espacios en blanco"})
     nueva_tarea = Tarea(
         id=contador_id,
         descripcion=descripcion_limpia,
         estado=tarea_data.estado,
         fecha_creacion=datetime.now()
     )
-    tareas.append(nueva_tarea)
+    tareas_db.append(nueva_tarea)
     contador_id += 1
     return nueva_tarea
 
@@ -74,25 +74,25 @@ async def crear_tarea(tarea_data: TareaCreate):
 @app.get("/tareas/resumen", summary="Obtener un resumen de tareas por estado")
 async def obtener_resumen():
     resumen = {
-        "pendiente": sum(1 for tarea in tareas if tarea.estado == EstadoTarea.pendiente),
-        "en_progreso": sum(1 for tarea in tareas if tarea.estado == EstadoTarea.en_progreso),
-        "completada": sum(1 for tarea in tareas if tarea.estado == EstadoTarea.completada)
+        "pendiente": sum(1 for tarea in tareas_db if tarea.estado == EstadoTarea.pendiente),
+        "en_progreso": sum(1 for tarea in tareas_db if tarea.estado == EstadoTarea.en_progreso),
+        "completada": sum(1 for tarea in tareas_db if tarea.estado == EstadoTarea.completada)
     }
     return resumen
 
 # Ruta PUT /tareas/completar_todas: Marcar todas las tareas como completadas (definida ANTES de /tareas/{id} para evitar conflicto)
 @app.put("/tareas/completar_todas", summary="Marcar todas las tareas como completadas")
 async def completar_todas():
-    if not tareas:
+    if not tareas_db:
         return {"mensaje": "No hay tareas para completar"}
-    for tarea in tareas:
+    for tarea in tareas_db:
         tarea.estado = EstadoTarea.completada
-    return {"mensaje": f"Se completaron {len(tareas)} tareas"}
+    return {"mensaje": f"Se completaron {len(tareas_db)} tareas"}
 
 # Ruta PUT /tareas/{id}: Actualizar una tarea existente (definida DESPUÉS de /tareas/completar_todas)
 @app.put("/tareas/{id}", response_model=Tarea, summary="Actualizar una tarea por su ID")
 async def actualizar_tarea(id: int, tarea_data: TareaUpdate):
-    for tarea in tareas:
+    for tarea in tareas_db:
         if tarea.id == id:
             if tarea_data.descripcion is not None:
                 if not tarea_data.descripcion.strip():
@@ -106,9 +106,9 @@ async def actualizar_tarea(id: int, tarea_data: TareaUpdate):
 # Ruta DELETE /tareas/{id}: Eliminar una tarea
 @app.delete("/tareas/{id}", summary="Eliminar una tarea por su ID")
 async def eliminar_tarea(id: int):
-    for i, tarea in enumerate(tareas):
+    for i, tarea in enumerate(tareas_db):
         if tarea.id == id:
-            tareas.pop(i)
+            tareas_db.pop(i)
             return {"mensaje": "Tarea eliminada exitosamente"}
     raise HTTPException(status_code=404, detail={"error": "La tarea no existe"})
 
