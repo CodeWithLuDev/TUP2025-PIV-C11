@@ -56,9 +56,13 @@ async def obtener_tareas(
 @app.post("/tareas", response_model=Tarea, status_code=201, summary="Crear una nueva tarea")
 async def crear_tarea(tarea_data: TareaCreate):
     global contador_id
+    # Validar que después de strip() la descripción no sea vacía
+    descripcion_limpia = tarea_data.descripcion.strip()
+    if not descripcion_limpia:
+        raise HTTPException(status_code=400, detail={"error": "La descripción no puede ser solo espacios en blanco"})
     nueva_tarea = Tarea(
         id=contador_id,
-        descripcion=tarea_data.descripcion.strip(),
+        descripcion=descripcion_limpia,
         estado=tarea_data.estado,
         fecha_creacion=datetime.now()
     )
@@ -111,4 +115,4 @@ async def eliminar_tarea(id: int):
 # Para desarrollo: ejecutar el servidor si el archivo se corre directamente
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000, log_level="info")
+    uvicorn.run(app, host="127.0.0.1", port=8000, log_level="info")
