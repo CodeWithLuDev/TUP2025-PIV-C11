@@ -1,20 +1,23 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Body
+from fastapi.responses import JSONResponse, HTMLResponse
 from datetime import datetime
-from fastapi.responses import HTMLResponse
+from pydantic import BaseModel
+from typing import Optional, Dict, Any
 
 app = FastAPI()
 
 # Lista de tareas en memoria
-tareas = []
+tareas_db = []
 
 # Estados válidos
 ESTADOS_VALIDOS = ["pendiente", "en_progreso", "completada"]
-ID_COUNTER = 1
+contador_id = 1
 
 
+class Tarea(BaseModel):
+    descripcion: str
+    estado: str = "pendiente"
 
-
-from fastapi.responses import HTMLResponse
 
 @app.get("/", response_class=HTMLResponse, include_in_schema=False)
 def read_root():
@@ -67,11 +70,9 @@ def read_root():
     """
 
 
-
-
-@app.get("/tareas")                     #GET
+@app.get("/tareas")  # GET
 def obtener_tareas(estado: str = None, texto: str = None):
-    resultado = tareas
+    resultado = tareas_db
 
     # Filtro por estado
     if estado:
@@ -85,71 +86,74 @@ def obtener_tareas(estado: str = None, texto: str = None):
 
     return resultado
 
-@app.post("/tareas")                    #POST
-def crear_tarea(tarea: dict):
-    descripcion = tarea.get("descripcion", "").strip()
-    estado = tarea.get("estado", "pendiente")
+
+@app.post("/tareas", status_code=201)  # POST
+def crear_tarea(tarea: Tarea):
+    global contador_id
+    descripcion = tarea.descripcion.strip()
+    estado = tarea.estado
 
     if not descripcion:
-        raise HTTPException(status_code=400, detail="La descripción no puede estar vacía")
+        raise HTTPException(status_code=422, detail={"error": "La descripción no puede estar vacía"})
 
     if estado not in ESTADOS_VALIDOS:
-        raise HTTPException(status_code=400, detail="Estado inválido")
+        raise HTTPException(status_code=422, detail={"error": "Estado inválido"})
 
     nueva_tarea = {
-        "id": len(tareas) + 1,
+        "id": contador_id,
         "descripcion": descripcion,
         "estado": estado,
         "fecha_creacion": datetime.now().isoformat()
     }
 
-    tareas.append(nueva_tarea)
+    tareas_db.append(nueva_tarea)
+    contador_id += 1
     return nueva_tarea
 
-@app.put("/tareas/{id}")            #PUT
+
+@app.put("/tareas/{id}")
 def modificar_tarea(id: int, datos: dict):
-    for tarea in tareas:
+    for tarea in tareas_db:
         if tarea["id"] == id:
             if "descripcion" in datos:
                 if not datos["descripcion"].strip():
-                    raise HTTPException(status_code=400, detail="La descripción no puede estar vacía")
-                tarea["descripcion"] = datos["descripcion"]
+                    raise HTTPException(status_code=422, detail={"error": "La descripción no puede estar vacía"})
+                tarea["descripcion"] = datos["descripcion"].strip()
 
             if "estado" in datos:
                 if datos["estado"] not in ESTADOS_VALIDOS:
-                    raise HTTPException(status_code=400, detail="Estado inválido")
+                    raise HTTPException(status_code=422, detail={"error": "Estado inválido"})
                 tarea["estado"] = datos["estado"]
 
             return tarea
 
-    raise HTTPException(status_code=404, detail="La tarea no existe")
+    raise HTTPException(status_code=404, detail={"error": "La tarea no existe"})
 
 
-@app.delete("/tareas/{id}")             #DELETE
+@app.delete("/tareas/{id}")
 def eliminar_tarea(id: int):
-    for i, tarea in enumerate(tareas):
+    for i, tarea in enumerate(tareas_db):
         if tarea["id"] == id:
-            tareas.pop(i)
-            return {"mensaje": "Tarea eliminada correctamente"}
-    raise HTTPException(status_code=404, detail="La tarea no existe")
+            del tareas_db[i]
+            return {"mensaje": "Tarea eliminada exitosamente"}
 
+    raise HTTPException(status_code=404, detail={"error": "La tarea no existe"})
 
 
 @app.get("/tareas/resumen")
 def resumen_tareas():
     resumen = {estado: 0 for estado in ESTADOS_VALIDOS}
-    for tarea in tareas:
+    for tarea in tareas_db:
         resumen[tarea["estado"]] += 1
     return resumen
 
 
-
 @app.put("/tareas/completar_todas")
 def completar_todas():
-    if not tareas:
+    if not tareas_db:
         return {"mensaje": "No hay tareas para completar"}
 
-    for tarea in tareas:
+    for tarea in tareas_db:
         tarea["estado"] = "completada"
 
     return {"mensaje": "Todas las tareas fueron marcadas como completadas"}
