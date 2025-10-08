@@ -3,7 +3,7 @@ TP3.1: Introducción a FastAPI - Servidor Básico
 Agenda de Contactos API
 
 Este archivo contiene la implementación del servidor FastAPI
-que expone endpoints para una agenda de contactos.
+que expone endpoints para una agenda de contactos harcodeados.
 """
 
 from fastapi import FastAPI, HTTPException, Request
