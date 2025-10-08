@@ -1,5 +1,5 @@
 """
-TP3.2: Mini API de Tareas con FastAPI
+TP3.2: Mini API de Tareas con FastAPI 
 
 Este archivo implementa una API REST en memoria para gestionar tareas, 
 incluyendo CRUD, filtros por query params, validaciones y rutas extra.
