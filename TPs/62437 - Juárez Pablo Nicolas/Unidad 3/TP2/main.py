@@ -91,4 +91,4 @@ def completar_todas():
 
     for t in tareas_db:
         t.estado = EstadoTarea.completada
-    return {"mensaje": "Todas las tareas fueron marcadas como completadas"}
+    return {"mensaje": "Todas las tareas fueron marcadas como completadas"} 
