@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, Body
+from fastapi import FastAPI, HTTPException, Body, Request
 from fastapi.responses import JSONResponse, HTMLResponse
 from datetime import datetime
 from pydantic import BaseModel
@@ -76,8 +76,9 @@ def obtener_tareas(estado: str = None, texto: str = None):
 
     # Filtro por estado
     if estado:
+        # Cambié el status_code a 422 para mantener coherencia con las otras validaciones
         if estado not in ESTADOS_VALIDOS:
-            raise HTTPException(status_code=400, detail="Estado inválido")
+            raise HTTPException(status_code=422, detail={"error": "Estado inválido"})
         resultado = [t for t in resultado if t["estado"] == estado]
 
     # Filtro por texto
@@ -110,9 +111,19 @@ def crear_tarea(tarea: Tarea):
     contador_id += 1
     return nueva_tarea
 
+@app.put("/tareas/completar_todas", status_code=200)
+def completar_todas():
+    if not tareas_db:
+        return {"mensaje": "No hay tareas para completar"}
+
+    for tarea in tareas_db:
+        tarea["estado"] = "completada"
+
+    return {"mensaje": "Todas las tareas fueron marcadas como completadas"}
+
 
 @app.put("/tareas/{id}")
-def modificar_tarea(id: int, datos: dict):
+def modificar_tarea(id: int, datos: dict = Body(...)):
     for tarea in tareas_db:
         if tarea["id"] == id:
             if "descripcion" in datos:
@@ -128,7 +139,6 @@ def modificar_tarea(id: int, datos: dict):
             return tarea
 
     raise HTTPException(status_code=404, detail={"error": "La tarea no existe"})
-
 
 @app.delete("/tareas/{id}")
 def eliminar_tarea(id: int):
@@ -148,12 +158,4 @@ def resumen_tareas():
     return resumen
 
 
-@app.put("/tareas/completar_todas")
-def completar_todas():
-    if not tareas_db:
-        return {"mensaje": "No hay tareas para completar"}
 
-    for tarea in tareas_db:
-        tarea["estado"] = "completada"
-
-    return {"mensaje": "Todas las tareas fueron marcadas como completadas"}
