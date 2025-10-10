@@ -1,9 +1,9 @@
 from typing import List, Optional
 from fastapi import FastAPI, HTTPException, Path, Query, status
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, validator
 from enum import Enum
 from datetime import datetime, timezone
-import itertools
 
 # ---------- Config / Constantes ----------
 class Estado(str, Enum):
@@ -13,7 +13,9 @@ class Estado(str, Enum):
 
 VALID_ESTADOS = {e.value for e in Estado}
 
-_id_counter = itertools.count(1)  # contador seguro y simple para ids en memoria
+# Variables globales para tests
+contador_id = 1
+tareas_db = {}
 
 # ---------- Modelos ----------
 class TareaBase(BaseModel):
@@ -23,7 +25,6 @@ class TareaBase(BaseModel):
     @validator("descripcion")
     def descripcion_no_vacia(cls, v: str):
         if not v or not v.strip():
-            # 400 será manejado en endpoint (pero validación aquí evita creación de modelos inválidos)
             raise ValueError("La descripción no puede estar vacía")
         return v.strip()
 
@@ -43,23 +44,14 @@ class TareaActualizar(BaseModel):
 
 class Tarea(TareaBase):
     id: int
-    created_at: str  # ISO timestamp
+    fecha_creacion: str  # ISO timestamp
 
 # ---------- App ----------
 app = FastAPI(title="Mini API de Tareas - TP2", version="1.0.0")
 
-# Almacenamiento en memoria
-_tareas: List[Tarea] = []
-
 # ---------- Helpers ----------
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
-
-def _find_index_by_id(tarea_id: int) -> Optional[int]:
-    for idx, t in enumerate(_tareas):
-        if t.id == tarea_id:
-            return idx
-    return None
 
 # ---------- Endpoints ----------
 
@@ -69,7 +61,7 @@ def obtener_tareas(estado: Optional[str] = Query(None, description="Filtrar por 
     """
     Obtener todas las tareas. Opcionalmente filtrar por estado y/o buscar por texto en la descripción.
     """
-    resultados = _tareas
+    resultados = list(tareas_db.values())
 
     if estado is not None:
         if estado not in VALID_ESTADOS:
@@ -88,15 +80,18 @@ def crear_tarea(payload: TareaCrear):
     """
     Crear una nueva tarea. La descripción no puede estar vacía.
     """
-    # payload already validated by Pydantic (descripcion y estado)
-    tarea_id = next(_id_counter)
+    global contador_id
+    
+    tarea_id = contador_id
+    contador_id += 1
+    
     tarea = Tarea(
         id=tarea_id,
         descripcion=payload.descripcion,
         estado=payload.estado,
-        created_at=_now_iso()
+        fecha_creacion=_now_iso()
     )
-    _tareas.append(tarea)
+    tareas_db[tarea_id] = tarea
     return tarea
 
 @app.put("/tareas/{tarea_id}", response_model=Tarea)
@@ -107,11 +102,10 @@ def actualizar_tarea(tarea_id: int = Path(..., ge=1), payload: TareaActualizar =
       - Si se proporciona 'estado', debe ser uno de los permitidos.
       - Si se proporciona 'descripcion', no puede estar vacía.
     """
-    idx = _find_index_by_id(tarea_id)
-    if idx is None:
+    if tarea_id not in tareas_db:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail={"error": "La tarea no existe"})
 
-    tarea = _tareas[idx]
+    tarea = tareas_db[tarea_id]
 
     # Validación estado (Pydantic ya lo hace al parsear a Enum), pero chequeo extra por seguridad:
     if payload.estado is not None and payload.estado not in Estado:
@@ -120,12 +114,11 @@ def actualizar_tarea(tarea_id: int = Path(..., ge=1), payload: TareaActualizar =
 
     # Aplicar cambios (solo los que vienen)
     if payload.descripcion is not None:
-        # validator en modelo ya aseguró que no sea vacía
         tarea.descripcion = payload.descripcion
     if payload.estado is not None:
         tarea.estado = payload.estado
 
-    _tareas[idx] = tarea
+    tareas_db[tarea_id] = tarea
     return tarea
 
 @app.delete("/tareas/{tarea_id}")
@@ -134,11 +127,11 @@ def eliminar_tarea(tarea_id: int = Path(..., ge=1)):
     Eliminar una tarea por id. Si no existe -> 404.
     Retorna JSON con mensaje claro.
     """
-    idx = _find_index_by_id(tarea_id)
-    if idx is None:
+    if tarea_id not in tareas_db:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail={"error": "La tarea no existe"})
-    _tareas.pop(idx)
-    return {"message": "Tarea eliminada correctamente"}
+    
+    del tareas_db[tarea_id]
+    return {"mensaje": "Tarea eliminada correctamente"}
 
 @app.get("/tareas/resumen")
 def resumen_tareas():
@@ -146,7 +139,7 @@ def resumen_tareas():
     Devuelve el contador de tareas por estado.
     """
     resumen = {e.value: 0 for e in Estado}
-    for t in _tareas:
+    for t in tareas_db.values():
         resumen[t.estado] += 1
     return resumen
 
@@ -154,33 +147,31 @@ def resumen_tareas():
 def completar_todas():
     """
     Marca todas las tareas como 'completada'.
-    Retorna la cantidad de tareas actualizadas.
+    Retorna mensaje con cantidad de tareas actualizadas.
     """
-    if not _tareas:
-        # Devolver igual 200 con count 0; tests esperables pueden comprobar comportamiento.
-        return {"actualizadas": 0}
+    if not tareas_db:
+        return {"mensaje": "No hay tareas para completar"}
 
     actualizadas = 0
-    for idx, t in enumerate(_tareas):
-        if t.estado != Estado.completada:
-            t.estado = Estado.completada
-            _tareas[idx] = t
+    for tarea_id, tarea in tareas_db.items():
+        if tarea.estado != Estado.completada:
+            tarea.estado = Estado.completada
+            tareas_db[tarea_id] = tarea
             actualizadas += 1
 
-    return {"actualizadas": actualizadas}
+    return {"mensaje": f"Se completaron {actualizadas} tareas"}
 
-# ---------- Manejo global de errores (opcional, formato consistente) ----------
+# ---------- Manejo global de errores ----------
 @app.exception_handler(HTTPException)
 async def http_exception_handler(request, exc: HTTPException):
-    # Normaliza la respuesta para que contenga siempre JSON con 'error' o el detail si viene así.
+    """
+    Normaliza la respuesta para que contenga siempre JSON con 'error' o el detail si viene así.
+    """
     detail = exc.detail
     if isinstance(detail, dict):
         body = detail
     elif isinstance(detail, str):
         body = {"error": detail}
     else:
-        # puede ser otra estructura
-        body = {"error": detail}
-    return fastapi.responses.JSONResponse(status_code=exc.status_code, content=body)
-
-# Nota: En tests con TestClient no hace falta arrancar uvicorn; simplemente importar `app` funciona.
+        body = {"error": str(detail)}
+    return JSONResponse(status_code=exc.status_code, content=body)
