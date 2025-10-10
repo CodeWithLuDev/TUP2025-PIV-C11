@@ -100,7 +100,7 @@ El trabajo debe presentarse hasta el 17 de OCTUBRE de 2025 a las 21:00hs.
 
 1. **Instalar dependencias**:
 
-    Instala las dependencias requeridas:
+    Instala las dependencias requeridas (si no la instalaron en los TPs anteriories):
 
     ```bash
     pip install pytest requests httpx # Instala las librerias en el entorno
@@ -108,26 +108,26 @@ El trabajo debe presentarse hasta el 17 de OCTUBRE de 2025 a las 21:00hs.
 
 2. **Verificar la estructura del proyecto**:
 
-    Asegúrate de que el archivo con los tests (por ejemplo, test_TP2.py) y el archivo main.py (que contiene la aplicación FastAPI) estén en el mismo directorio o en una estructura accesible.
+    Asegúrate de que el archivo con los tests (por ejemplo, test_TP3.py) y el archivo main.py (que contiene la aplicación FastAPI) estén en el mismo directorio o en una estructura accesible.
 
 3. **Ejecutar los tests**
 
-    - **Abrir una terminal**: Navega al directorio donde están los archivos test_TP2.py y main.py.
+    - **Abrir una terminal**: Navega al directorio donde están los archivos test_TP3.py y main.py.
     - **Ejecutar pytest**: Usa el comando
 
         ```bash
-        pytest test_TP2.py -v
+        pytest test_TP3.py -v
         ```
 
     - -v habilita el modo verboso para ver detalles de cada prueba.
-    - Esto ejecutará todos los tests definidos en el archivo (test_01 a test_20).
+    - Esto ejecutará todos los tests definidos en el archivo (test_01 a test_27).
 
 4. **Opcional: Ejecutar un test específico**:
 
     Si quieres ejecutar un solo test, por ejemplo, test_07_crear_tarea_exitosamente, usa:
 
     ```bash
-    pytest test_TP2.py::test_07_crear_tarea_exitosamente -v
+    pytest test_TP3.py::test_00_nombre_del_test -v
     ```
 
 5. **Verificar los resultados**
@@ -138,11 +138,11 @@ El trabajo debe presentarse hasta el 17 de OCTUBRE de 2025 a las 21:00hs.
 
     ```bash
     ============================= test session starts =============================
-    test_TP2.py::test_01_obtener_tareas_vacia PASSED
-    test_TP2.py::test_02_obtener_todas_las_tareas PASSED
+    test_TP3... PASSED
+    test_TP3... PASSED
     ...
-    test_TP2.py::test_20_completar_todas_sin_tareas PASSED
-    ========================= 20 passed in 0.12s =========================
+    test_TP3... PASSED
+    ============================= 20 passed in 0.12s ==============================
     ```
 
     - Si algún test falla, revisa el mensaje de error para identificar el problema (por ejemplo, un endpoint mal implementado en main.py o un problema con las aserciones).
