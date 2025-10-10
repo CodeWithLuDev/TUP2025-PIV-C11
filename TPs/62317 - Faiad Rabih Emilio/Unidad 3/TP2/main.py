@@ -14,6 +14,7 @@ class Tarea(BaseModel):
 
 estadosValidos = {"pendiente", "en_progreso", "completada"}
 tareas: List[Tarea] = []
+contTareas = 0
 
 app = FastAPI()
 
@@ -26,11 +27,13 @@ async def VomitarTareas():
     return tareas
 
 @app.post("/tareas")
-async def CrearTarea(ID: int, DESCRIPCION: str, ESTADO: str):
+async def CrearTarea(DESCRIPCION: str, ESTADO: str):
+    global contTareas
     if ESTADO not in estadosValidos:
         raise HTTPException(status_code=422, detail="Estado inválido")
-    nueva_tarea = Tarea(id=ID, descripcion=DESCRIPCION, estado=ESTADO, fechacreada=datetime.datetime.now().isoformat())
+    nueva_tarea = Tarea(id=contTareas, descripcion=DESCRIPCION, estado=ESTADO, fechacreada=datetime.datetime.now().isoformat())
     tareas.append(nueva_tarea)
+    contTareas += 1
     return nueva_tarea
 
 
