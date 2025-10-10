@@ -3,21 +3,28 @@ from pydantic import BaseModel, Field
 from datetime import datetime
 from typing import Optional, List
 
-app = FastAPI(title="Mini API de Tareas - TP2")
-
-
+app = FastAPI(title="Mini API de Tareas - TP2 Corregido")
 
 class Tarea(BaseModel):
     id: int
-    descripcion: str = Field(..., min_length=1, description="La descripción no puede estar vacía")
-    estado: str = Field(..., regex="^(pendiente|en_progreso|completada)$", description="Estado inválido")
+    descripcion: str
+    estado: str
     fecha_creacion: str
+
+
+class TareaCrear(BaseModel):
+    descripcion: str = Field(..., min_length=1, description="La descripción no puede estar vacía")
+    estado: Optional[str] = Field("pendiente", description="Estado de la tarea (pendiente, en_progreso, completada)")
+
+
+class TareaModificar(BaseModel):
+    descripcion: Optional[str] = None
+    estado: Optional[str] = None
 
 
 
 tareas: List[Tarea] = []
 contador_id = 1
-
 
 
 
@@ -31,26 +38,23 @@ def inicio():
 def obtener_tareas(estado: Optional[str] = Query(None), texto: Optional[str] = Query(None)):
     resultado = tareas
 
-    
     if estado:
         if estado not in ["pendiente", "en_progreso", "completada"]:
             raise HTTPException(status_code=400, detail={"error": "Estado inválido"})
         resultado = [t for t in resultado if t.estado == estado]
 
-    
     if texto:
         resultado = [t for t in resultado if texto.lower() in t.descripcion.lower()]
 
     return resultado
 
 
-
 @app.post("/tareas", status_code=201)
-def crear_tarea(data: dict):
+def crear_tarea(data: TareaCrear):
     global contador_id
 
-    descripcion = data.get("descripcion", "").strip()
-    estado = data.get("estado", "pendiente")
+    descripcion = data.descripcion.strip()
+    estado = data.estado.strip() if data.estado else "pendiente"
 
     if not descripcion:
         raise HTTPException(status_code=400, detail={"error": "La descripción no puede estar vacía"})
@@ -70,20 +74,19 @@ def crear_tarea(data: dict):
 
 
 @app.put("/tareas/{id}")
-def modificar_tarea(id: int, data: dict):
+def modificar_tarea(id: int, data: TareaModificar):
     for t in tareas:
         if t.id == id:
-            if "descripcion" in data:
-                if not data["descripcion"].strip():
+            if data.descripcion is not None:
+                if not data.descripcion.strip():
                     raise HTTPException(status_code=400, detail={"error": "La descripción no puede estar vacía"})
-                t.descripcion = data["descripcion"]
-            if "estado" in data:
-                if data["estado"] not in ["pendiente", "en_progreso", "completada"]:
+                t.descripcion = data.descripcion.strip()
+            if data.estado is not None:
+                if data.estado not in ["pendiente", "en_progreso", "completada"]:
                     raise HTTPException(status_code=400, detail={"error": "Estado inválido"})
-                t.estado = data["estado"]
+                t.estado = data.estado
             return t
     raise HTTPException(status_code=404, detail={"error": "La tarea no existe"})
-
 
 
 @app.delete("/tareas/{id}")
@@ -110,7 +113,7 @@ def resumen_tareas():
 @app.put("/tareas/completar_todas")
 def completar_todas():
     if not tareas:
-        raise HTTPException(status_code=404, detail={"error": "No hay tareas para completar"})
+        raise HTTPException(status_code=400, detail={"error": "No hay tareas para completar"})
     for t in tareas:
         t.estado = "completada"
     return {"mensaje": "Todas las tareas fueron marcadas como completadas"}
