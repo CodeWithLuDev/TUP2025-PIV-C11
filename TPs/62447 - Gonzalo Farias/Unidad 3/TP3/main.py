@@ -6,6 +6,8 @@ from datetime import datetime
 import sqlite3
 from pathlib import Path as FSPath
 DB_PATH = "tareas.db"
+DB_NAME = DB_PATH
+
 
 app = FastAPI(title="Mini API de Tareas - TP3 (SQLite)")
 
@@ -146,7 +148,8 @@ def obtener_tareas(
 
     # Orden por fecha_creacion (texto ISO); usamos datetime() para ordenar correctamente
     if orden_limpio:
-        sql += f" ORDER BY datetime(fecha_creacion) {orden_limpio.upper()}"
+        sql += f" ORDER BY id {orden_limpio.upper()}"
+
 
     conn = get_connection()
     try:
@@ -165,6 +168,55 @@ def obtener_tareas(
         return resultado
     finally:
         conn.close()
+
+@app.get("/tareas/resumen")
+def resumen_tareas():
+    conn = get_connection()
+    try:
+        cur = conn.cursor()
+
+        # Conteo por estado
+        filas_estado = cur.execute(
+            "SELECT estado, COUNT(*) FROM tareas GROUP BY estado"
+        ).fetchall()
+        por_estado = {e: 0 for e in ALLOWED_ESTADOS}
+        for estado, cant in filas_estado:
+            if estado in por_estado:
+                por_estado[estado] = cant
+
+        # Conteo por prioridad
+        filas_prioridad = cur.execute(
+            "SELECT prioridad, COUNT(*) FROM tareas GROUP BY prioridad"
+        ).fetchall()
+        por_prioridad = {p: 0 for p in ALLOWED_PRIORIDADES}
+        for prioridad, cant in filas_prioridad:
+            if prioridad in por_prioridad:
+                por_prioridad[prioridad] = cant
+
+        total = sum(por_estado.values())
+        return {
+            "total_tareas": total,
+            "por_estado": por_estado,
+            "por_prioridad": por_prioridad,
+        }
+    finally:
+        conn.close()
+
+
+@app.put("/tareas/completar_todas")
+def completar_todas():
+    conn = get_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "UPDATE tareas SET estado = 'completada' WHERE estado <> 'completada'"
+        )
+        conn.commit()
+        actualizadas = cur.rowcount or 0
+        return {"mensaje": f"Se completaron {actualizadas} tareas", "actualizadas": actualizadas}
+    finally:
+        conn.close()
+
 
 @app.get("/tareas/{id}")
 def obtener_tarea_por_id(id: int = Path(..., ge=1)):
@@ -199,7 +251,7 @@ def crear_tarea(tarea: TareaBase):
     if prioridad not in ALLOWED_PRIORIDADES:
         raise HTTPException(status_code=400, detail="Prioridad inválida. Use: baja, media, alta.")
     
-    fecha_creacion = datetime.now().isoformat(timespec="seconds")
+    fecha_creacion = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")
 
     conn = get_connection()
     try:
@@ -304,22 +356,16 @@ def eliminar_tarea(
     finally:
         conn.close()
 
-
-@app.get("/tareas/resumen")
-def resumen_tareas():
-    conn = get_connection()
-    try:
-        cur = conn.cursor()
-        filas = cur.execute(
-            "SELECT estado, COUNT(*) FROM tareas GROUP BY estado"
-        ).fetchall()
-
-        # Aseguramos todas las claves aunque no haya filas de ese estado
-        resumen = {estado: 0 for estado in ALLOWED_ESTADOS}
-        for estado, cantidad in filas:
-            if estado in resumen:
-                resumen[estado] = cantidad
-
-        return resumen
-    finally:
-        conn.close()
+@app.get("/")
+def root():
+    return {
+        "nombre": "API de Tareas TP3 (SQLite)",
+        "version": "1.0",
+        "endpoints": [
+            "/tareas",
+            "/tareas/{id}",
+            "/tareas/resumen",
+            "/tareas/completar_todas",
+            "/docs"
+        ]
+    }
