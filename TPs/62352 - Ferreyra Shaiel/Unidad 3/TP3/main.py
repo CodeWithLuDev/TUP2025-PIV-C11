@@ -374,4 +374,3 @@ async def eliminar_tarea(id: int):
     conn.close()
     
     return {"mensaje": f"Tarea {id} eliminada correctamente"}
-
