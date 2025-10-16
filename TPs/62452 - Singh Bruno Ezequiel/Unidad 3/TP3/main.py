@@ -4,6 +4,9 @@ from datetime import datetime
 from pydantic import BaseModel
 from typing import Optional, Dict, Any
 import sqlite3
+from fastapi.responses import JSONResponse
+from fastapi.exceptions import RequestValidationError
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 DB_NAME = "tareas.db"
 
@@ -316,4 +319,26 @@ def resumen_tareas():
     return resumen
 
 
+# Error 404 personalizado
+@app.exception_handler(StarletteHTTPException)
+async def http_exception_handler(request, exc):
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"error": exc.detail or "Recurso no encontrado"}
+    )
 
+# Error de validación (por ejemplo, campos incorrectos en el body)
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request, exc):
+    return JSONResponse(
+        status_code=422,
+        content={"error": "Error de validación", "detalles": exc.errors()}
+    )
+
+# Error general para capturar cualquier otra excepción no prevista
+@app.exception_handler(Exception)
+async def general_exception_handler(request, exc):
+    return JSONResponse(
+        status_code=500,
+        content={"error": "Error interno del servidor", "detalle": str(exc)}
+    )
