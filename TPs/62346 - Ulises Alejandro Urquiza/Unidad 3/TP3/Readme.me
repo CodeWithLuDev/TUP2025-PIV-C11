@@ -1,0 +1,56 @@
+Trabajo Practico Numero 3
+
+Como iniciar el servidor
+
+Paso 1: Instalar las dependencias necesarias
+    pip install fastapi uvicorn
+
+Paso 2: Ejecutamos el servdor
+    uvicorn main:app --reload
+
+Paso 3: Abrimos el navegador y ingresamos a la documentacion interactiva Ej:
+    http://127.0.0.1:8000/docs
+
+Endpoints
+
+🔹 Crear una tarea
+POST /tareas
+{
+  "description": "Estudiar para el parcial",
+  "estado": "pendiente",
+  "prioridad": "alta"
+}
+🔹 Listar tareas
+GET /tareas
+Filtros opcionales:
+- estado: "pendiente", "en_progreso", "completada"
+- prioridad: "baja", "media", "alta"
+- texto: busca en la descripción
+- orden: "asc" o "desc" por fecha
+Ejemplo:
+GET /tareas?estado=pendiente&prioridad=alta&orden=desc
+
+
+
+🔹 Modificar una tarea
+PUT /tareas/{id}
+{
+  "description": "Estudiar para el final",
+  "estado": "completada",
+  "prioridad": "media"
+}
+
+
+
+🔹 Eliminar una tarea
+DELETE /tareas/{id}
+No requiere cuerpo. Solo pasá el id en la URL.
+
+🔹 Ver resumen por estado
+GET /tareas/resumen
+Devuelve la cantidad de tareas por estado:
+{
+  "pendiente": 2,
+  "en_progreso": 1,
+  "completada": 3
+}
