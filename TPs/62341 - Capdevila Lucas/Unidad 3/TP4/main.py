@@ -3,6 +3,7 @@ TP4: API de Gestión de Proyectos y Tareas
 Relaciones entre tablas y filtros avanzados con FastAPI y SQLite
 """
 
+from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -14,7 +15,7 @@ from models import (
     TareaCreate, TareaUpdate, Tarea
 )
 from database import (
-    init_db,
+    init_db, close_all_connections,
     crear_proyecto, obtener_proyectos, obtener_proyecto, actualizar_proyecto, eliminar_proyecto,
     crear_tarea, obtener_tareas, obtener_tarea, actualizar_tarea, eliminar_tarea,
     obtener_resumen_proyecto, obtener_resumen_general
@@ -27,9 +28,7 @@ app = FastAPI(
     version="2.0.0",
 )
 
-# Inicializar base de datos al arrancar
 init_db()
-
 
 # ========== ENDPOINT RAÍZ ==========
 

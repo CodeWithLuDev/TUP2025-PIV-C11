@@ -4,18 +4,20 @@ TP4: Funciones de acceso a base de datos SQLite
 
 import sqlite3
 from typing import Dict, List, Optional, Any
+import gc
+from contextlib import closing
 
 DB_NAME = "tareas.db"
 
 
 def init_db():
     """Inicializa la base de datos y crea las tablas si no existen"""
-    with sqlite3.connect(DB_NAME, timeout=30.0) as conn:
+    with sqlite3.connect(DB_NAME, timeout=30.0, check_same_thread=False) as conn:
         # Habilitar modo WAL para mejor concurrencia
         conn.execute("PRAGMA journal_mode=WAL")
         conn.execute("PRAGMA synchronous=NORMAL")
-        conn.execute("PRAGMA foreign_keys=ON")  # Habilitar claves foráneas
-        
+        conn.execute("PRAGMA foreign_keys=ON")
+
         # Tabla de proyectos
         conn.execute("""
             CREATE TABLE IF NOT EXISTS proyectos (
@@ -25,7 +27,7 @@ def init_db():
                 fecha_creacion TEXT NOT NULL
             )
         """)
-        
+
         # Tabla de tareas con relación a proyectos
         conn.execute("""
             CREATE TABLE IF NOT EXISTS tareas (
@@ -38,8 +40,13 @@ def init_db():
                 FOREIGN KEY (proyecto_id) REFERENCES proyectos(id) ON DELETE CASCADE
             )
         """)
-        
+
         conn.commit()
+
+
+def close_all_connections():
+    """Cierra todas las conexiones abiertas y limpia el garbage collector"""
+    gc.collect()
 
 
 def dict_from_row(cursor, row) -> Dict[str, Any]:
@@ -49,7 +56,7 @@ def dict_from_row(cursor, row) -> Dict[str, Any]:
 
 def get_connection():
     """Obtiene una conexión a la base de datos"""
-    conn = sqlite3.connect(DB_NAME, timeout=30.0)
+    conn = sqlite3.connect(DB_NAME, timeout=30.0, check_same_thread=False)
     conn.execute("PRAGMA foreign_keys=ON")
     conn.row_factory = sqlite3.Row
     return conn
@@ -60,7 +67,7 @@ def get_connection():
 def crear_proyecto(nombre: str, descripcion: Optional[str], fecha_creacion: str) -> Optional[Dict]:
     """Crea un nuevo proyecto en la base de datos"""
     try:
-        with get_connection() as conn:
+        with closing(get_connection()) as conn:
             cursor = conn.cursor()
             cursor.execute(
                 "INSERT INTO proyectos (nombre, descripcion, fecha_creacion) VALUES (?, ?, ?)",
@@ -68,7 +75,7 @@ def crear_proyecto(nombre: str, descripcion: Optional[str], fecha_creacion: str)
             )
             proyecto_id = cursor.lastrowid
             conn.commit()
-            
+
             cursor.execute("SELECT * FROM proyectos WHERE id = ?", (proyecto_id,))
             row = cursor.fetchone()
             if row:
@@ -82,9 +89,9 @@ def crear_proyecto(nombre: str, descripcion: Optional[str], fecha_creacion: str)
 
 def obtener_proyectos(filtro_nombre: Optional[str] = None) -> List[Dict]:
     """Obtiene todos los proyectos con contador de tareas"""
-    with get_connection() as conn:
+    with closing(get_connection()) as conn:
         cursor = conn.cursor()
-        
+
         if filtro_nombre:
             query = """
                 SELECT p.*, COUNT(t.id) as total_tareas
@@ -104,14 +111,14 @@ def obtener_proyectos(filtro_nombre: Optional[str] = None) -> List[Dict]:
                 ORDER BY p.fecha_creacion DESC
             """
             cursor.execute(query)
-        
+
         rows = cursor.fetchall()
         return [dict_from_row(cursor, row) for row in rows]
 
 
 def obtener_proyecto(proyecto_id: int) -> Optional[Dict]:
     """Obtiene un proyecto específico con contador de tareas"""
-    with get_connection() as conn:
+    with closing(get_connection()) as conn:
         cursor = conn.cursor()
         query = """
             SELECT p.*, COUNT(t.id) as total_tareas
@@ -128,49 +135,45 @@ def obtener_proyecto(proyecto_id: int) -> Optional[Dict]:
 def actualizar_proyecto(proyecto_id: int, nombre: Optional[str], descripcion: Optional[str]) -> Optional[Dict]:
     """Actualiza un proyecto existente"""
     try:
-        with get_connection() as conn:
+        with closing(get_connection()) as conn:
             cursor = conn.cursor()
-            
-            # Verificar que existe
+
             cursor.execute("SELECT id FROM proyectos WHERE id = ?", (proyecto_id,))
             if not cursor.fetchone():
                 return None
-            
+
             updates = []
             params = []
-            
+
             if nombre is not None:
                 updates.append("nombre = ?")
                 params.append(nombre)
-            
+
             if descripcion is not None:
                 updates.append("descripcion = ?")
                 params.append(descripcion)
-            
+
             if updates:
                 query = f"UPDATE proyectos SET {', '.join(updates)} WHERE id = ?"
                 params.append(proyecto_id)
                 cursor.execute(query, params)
                 conn.commit()
-            
+
             return obtener_proyecto(proyecto_id)
     except sqlite3.IntegrityError:
-        return None  # Nombre duplicado
+        return None
 
 
 def eliminar_proyecto(proyecto_id: int) -> tuple[bool, int]:
-    """Elimina un proyecto y sus tareas asociadas (CASCADE). Retorna (éxito, cantidad_tareas_eliminadas)"""
-    with get_connection() as conn:
+    """Elimina un proyecto y sus tareas asociadas (CASCADE)"""
+    with closing(get_connection()) as conn:
         cursor = conn.cursor()
-        
-        # Contar tareas antes de eliminar
         cursor.execute("SELECT COUNT(*) FROM tareas WHERE proyecto_id = ?", (proyecto_id,))
         tareas_eliminadas = cursor.fetchone()[0]
-        
-        # Eliminar proyecto (CASCADE eliminará las tareas)
+
         cursor.execute("DELETE FROM proyectos WHERE id = ?", (proyecto_id,))
         conn.commit()
-        
+
         return (cursor.rowcount > 0, tareas_eliminadas)
 
 
@@ -179,7 +182,7 @@ def eliminar_proyecto(proyecto_id: int) -> tuple[bool, int]:
 def crear_tarea(descripcion: str, estado: str, prioridad: str, proyecto_id: int, fecha_creacion: str) -> Optional[Dict]:
     """Crea una nueva tarea asociada a un proyecto"""
     try:
-        with get_connection() as conn:
+        with closing(get_connection()) as conn:
             cursor = conn.cursor()
             cursor.execute(
                 "INSERT INTO tareas (descripcion, estado, prioridad, proyecto_id, fecha_creacion) VALUES (?, ?, ?, ?, ?)",
@@ -187,48 +190,42 @@ def crear_tarea(descripcion: str, estado: str, prioridad: str, proyecto_id: int,
             )
             tarea_id = cursor.lastrowid
             conn.commit()
-            
             return obtener_tarea(tarea_id)
     except sqlite3.IntegrityError:
-        return None  # proyecto_id no existe
+        return None
 
 
 def obtener_tareas(proyecto_id: Optional[int] = None, estado: Optional[str] = None,
                    prioridad: Optional[str] = None, orden: Optional[str] = None) -> List[Dict]:
     """Obtiene tareas con filtros opcionales"""
-    with get_connection() as conn:
+    with closing(get_connection()) as conn:
         cursor = conn.cursor()
-        
         query = """
             SELECT t.*, p.nombre as proyecto_nombre
             FROM tareas t
             JOIN proyectos p ON t.proyecto_id = p.id
         """
-        
+
         conditions = []
         params = []
-        
+
         if proyecto_id is not None:
             conditions.append("t.proyecto_id = ?")
             params.append(proyecto_id)
-        
+
         if estado is not None:
             conditions.append("t.estado = ?")
             params.append(estado)
-        
+
         if prioridad is not None:
             conditions.append("t.prioridad = ?")
             params.append(prioridad)
-        
+
         if conditions:
             query += " WHERE " + " AND ".join(conditions)
-        
-        # Ordenamiento
-        if orden == "desc":
-            query += " ORDER BY t.fecha_creacion DESC"
-        else:
-            query += " ORDER BY t.fecha_creacion ASC"
-        
+
+        query += " ORDER BY t.fecha_creacion DESC" if orden == "desc" else " ORDER BY t.fecha_creacion ASC"
+
         cursor.execute(query, params)
         rows = cursor.fetchall()
         return [dict_from_row(cursor, row) for row in rows]
@@ -236,7 +233,7 @@ def obtener_tareas(proyecto_id: Optional[int] = None, estado: Optional[str] = No
 
 def obtener_tarea(tarea_id: int) -> Optional[Dict]:
     """Obtiene una tarea específica"""
-    with get_connection() as conn:
+    with closing(get_connection()) as conn:
         cursor = conn.cursor()
         query = """
             SELECT t.*, p.nombre as proyecto_nombre
@@ -253,43 +250,40 @@ def actualizar_tarea(tarea_id: int, descripcion: Optional[str], estado: Optional
                      prioridad: Optional[str], proyecto_id: Optional[int]) -> Optional[Dict]:
     """Actualiza una tarea existente"""
     try:
-        with get_connection() as conn:
+        with closing(get_connection()) as conn:
             cursor = conn.cursor()
-            
-            # Verificar que existe
             cursor.execute("SELECT id FROM tareas WHERE id = ?", (tarea_id,))
             if not cursor.fetchone():
                 return None
-            
+
             updates = []
             params = []
-            
+
             if descripcion is not None:
                 updates.append("descripcion = ?")
                 params.append(descripcion)
-            
+
             if estado is not None:
                 updates.append("estado = ?")
                 params.append(estado)
-            
+
             if prioridad is not None:
                 updates.append("prioridad = ?")
                 params.append(prioridad)
-            
+
             if proyecto_id is not None:
-                # Verificar que el proyecto existe
                 cursor.execute("SELECT id FROM proyectos WHERE id = ?", (proyecto_id,))
                 if not cursor.fetchone():
                     return None
                 updates.append("proyecto_id = ?")
                 params.append(proyecto_id)
-            
+
             if updates:
                 query = f"UPDATE tareas SET {', '.join(updates)} WHERE id = ?"
                 params.append(tarea_id)
                 cursor.execute(query, params)
                 conn.commit()
-            
+
             return obtener_tarea(tarea_id)
     except sqlite3.IntegrityError:
         return None
@@ -297,7 +291,7 @@ def actualizar_tarea(tarea_id: int, descripcion: Optional[str], estado: Optional
 
 def eliminar_tarea(tarea_id: int) -> bool:
     """Elimina una tarea"""
-    with get_connection() as conn:
+    with closing(get_connection()) as conn:
         cursor = conn.cursor()
         cursor.execute("DELETE FROM tareas WHERE id = ?", (tarea_id,))
         conn.commit()
@@ -308,35 +302,23 @@ def eliminar_tarea(tarea_id: int) -> bool:
 
 def obtener_resumen_proyecto(proyecto_id: int) -> Optional[Dict]:
     """Obtiene estadísticas de un proyecto"""
-    with get_connection() as conn:
+    with closing(get_connection()) as conn:
         cursor = conn.cursor()
-        
-        # Verificar que el proyecto existe
         cursor.execute("SELECT nombre FROM proyectos WHERE id = ?", (proyecto_id,))
         row = cursor.fetchone()
         if not row:
             return None
-        
+
         proyecto_nombre = row[0]
-        
-        # Total de tareas
         cursor.execute("SELECT COUNT(*) FROM tareas WHERE proyecto_id = ?", (proyecto_id,))
         total_tareas = cursor.fetchone()[0]
-        
-        # Por estado
-        cursor.execute(
-            "SELECT estado, COUNT(*) FROM tareas WHERE proyecto_id = ? GROUP BY estado",
-            (proyecto_id,)
-        )
+
+        cursor.execute("SELECT estado, COUNT(*) FROM tareas WHERE proyecto_id = ? GROUP BY estado", (proyecto_id,))
         por_estado = {row[0]: row[1] for row in cursor.fetchall()}
-        
-        # Por prioridad
-        cursor.execute(
-            "SELECT prioridad, COUNT(*) FROM tareas WHERE proyecto_id = ? GROUP BY prioridad",
-            (proyecto_id,)
-        )
+
+        cursor.execute("SELECT prioridad, COUNT(*) FROM tareas WHERE proyecto_id = ? GROUP BY prioridad", (proyecto_id,))
         por_prioridad = {row[0]: row[1] for row in cursor.fetchall()}
-        
+
         return {
             "proyecto_id": proyecto_id,
             "proyecto_nombre": proyecto_nombre,
@@ -348,22 +330,18 @@ def obtener_resumen_proyecto(proyecto_id: int) -> Optional[Dict]:
 
 def obtener_resumen_general() -> Dict:
     """Obtiene estadísticas generales de toda la aplicación"""
-    with get_connection() as conn:
+    with closing(get_connection()) as conn:
         cursor = conn.cursor()
-        
-        # Total proyectos
+
         cursor.execute("SELECT COUNT(*) FROM proyectos")
         total_proyectos = cursor.fetchone()[0]
-        
-        # Total tareas
+
         cursor.execute("SELECT COUNT(*) FROM tareas")
         total_tareas = cursor.fetchone()[0]
-        
-        # Tareas por estado
+
         cursor.execute("SELECT estado, COUNT(*) FROM tareas GROUP BY estado")
         tareas_por_estado = {row[0]: row[1] for row in cursor.fetchall()}
-        
-        # Proyecto con más tareas
+
         cursor.execute("""
             SELECT p.id, p.nombre, COUNT(t.id) as cantidad
             FROM proyectos p
@@ -373,7 +351,7 @@ def obtener_resumen_general() -> Dict:
             LIMIT 1
         """)
         row = cursor.fetchone()
-        
+
         proyecto_con_mas_tareas = None
         if row and row[2] > 0:
             proyecto_con_mas_tareas = {
@@ -381,7 +359,7 @@ def obtener_resumen_general() -> Dict:
                 "nombre": row[1],
                 "cantidad_tareas": row[2]
             }
-        
+
         return {
             "total_proyectos": total_proyectos,
             "total_tareas": total_tareas,
