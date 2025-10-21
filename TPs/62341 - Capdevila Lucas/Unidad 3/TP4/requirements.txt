@@ -3,4 +3,4 @@ uvicorn[standard]==0.24.0
 requests==2.31.0
 pytest==7.4.3
 httpx<0.28
-pydantic==2.5.0gi
+pydantic>=2.7.4
