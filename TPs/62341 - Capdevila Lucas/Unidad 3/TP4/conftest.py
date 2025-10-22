@@ -39,6 +39,10 @@ def test_client():
     """
     Crea un cliente de prueba de FastAPI reutilizable para toda la sesión.
     """
+    # Crear y cerrar cliente una vez por session pero usando context manager
+    from fastapi.testclient import TestClient
+    from main import app
+
     with TestClient(app) as client:
         yield client
 
@@ -49,6 +53,10 @@ def clean_after_test():
     Limpia cualquier conexión pendiente entre tests (Windows-friendly).
     """
     yield
-    sqlite3.connect(DB_NAME).close()
+    # Cerrar una conexión directa para evitar locks en Windows
+    try:
+        sqlite3.connect(DB_NAME).close()
+    except Exception:
+        pass
     close_all_connections()
     time.sleep(0.05)

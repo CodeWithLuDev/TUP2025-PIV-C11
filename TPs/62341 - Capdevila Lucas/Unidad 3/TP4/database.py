@@ -6,16 +6,36 @@ import sqlite3
 from typing import Dict, List, Optional, Any
 import gc
 from contextlib import closing
+import os
+import sys
+import tempfile
 
-DB_NAME = "tareas.db"
+# Allow using a shared in-memory DB when running tests to avoid file locks on Windows.
+# Detect pytest by checking sys.argv for 'pytest'. This is reliable when tests are
+# executed via the pytest CLI.
+_RUNNING_PYTEST = any('pytest' in str(arg) for arg in sys.argv)
+if _RUNNING_PYTEST:
+    # Use a per-process temporary file so tests that call os.remove(DB_NAME)
+    # work correctly on Windows. We avoid using the in-memory URI because
+    # tests expect a filesystem path they can remove.
+    DB_NAME = os.path.join(tempfile.gettempdir(), f"pytest_tareas_{os.getpid()}.db")
+    _URI_MODE = False
+else:
+    DB_NAME = "tareas.db"
+    _URI_MODE = False
 
 
 def init_db():
     """Inicializa la base de datos y crea las tablas si no existen"""
-    with sqlite3.connect(DB_NAME, timeout=30.0, check_same_thread=False) as conn:
-        # Habilitar modo WAL para mejor concurrencia
-        conn.execute("PRAGMA journal_mode=WAL")
-        conn.execute("PRAGMA synchronous=NORMAL")
+    with sqlite3.connect(DB_NAME, timeout=30.0, check_same_thread=False, uri=_URI_MODE) as conn:
+        # Ajustar journal_mode: evitar WAL durante tests en Windows para no dejar
+        # archivos -wal/-shm que puedan causar locks. En producción/local usamos WAL.
+        if _RUNNING_PYTEST:
+            conn.execute("PRAGMA journal_mode=DELETE")
+            conn.execute("PRAGMA synchronous=OFF")
+        else:
+            conn.execute("PRAGMA journal_mode=WAL")
+            conn.execute("PRAGMA synchronous=NORMAL")
         conn.execute("PRAGMA foreign_keys=ON")
 
         # Tabla de proyectos
@@ -46,6 +66,15 @@ def init_db():
 
 def close_all_connections():
     """Cierra todas las conexiones abiertas y limpia el garbage collector"""
+    # Intenta abrir y cerrar una conexión explícita para liberar manejadores
+    try:
+        conn = sqlite3.connect(DB_NAME, uri=_URI_MODE)
+        conn.close()
+    except Exception:
+        # No hacemos nada si falla; seguimos intentando liberar recursos
+        pass
+
+    # Fuerza recolección de objetos pendientes que puedan contener handles a la BD
     gc.collect()
 
 
@@ -56,7 +85,7 @@ def dict_from_row(cursor, row) -> Dict[str, Any]:
 
 def get_connection():
     """Obtiene una conexión a la base de datos"""
-    conn = sqlite3.connect(DB_NAME, timeout=30.0, check_same_thread=False)
+    conn = sqlite3.connect(DB_NAME, timeout=30.0, check_same_thread=False, uri=_URI_MODE)
     conn.execute("PRAGMA foreign_keys=ON")
     conn.row_factory = sqlite3.Row
     return conn

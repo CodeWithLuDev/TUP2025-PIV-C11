@@ -21,14 +21,31 @@ from database import (
     obtener_resumen_proyecto, obtener_resumen_general
 )
 
+import sys
+
+# Detectar pytest para evitar inicializar la BD en tiempo de import durante tests
+_RUNNING_PYTEST = any('pytest' in str(arg) for arg in sys.argv)
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """
+    Context manager para manejar el inicio y cierre de la base de datos
+    durante el ciclo de vida de la aplicación.
+    """
+    # Solo inicializar en import cuando NO estamos ejecutando pytest; durante
+    # los tests `test_TP4.py` llama a `init_db()` explícitamente en su fixture.
+    if not _RUNNING_PYTEST:
+        init_db()
+    yield
+    close_all_connections()
 
 app = FastAPI(
     title="API de Gestión de Proyectos y Tareas",
     description="API REST con relaciones entre tablas usando SQLite y FastAPI",
     version="2.0.0",
+    lifespan=lifespan
 )
 
-init_db()
 
 # ========== ENDPOINT RAÍZ ==========
 

@@ -5,8 +5,21 @@ from database import DB_NAME
 import sqlite3
 import os
 
-# Cliente de prueba
-client = TestClient(app)
+# Cliente de prueba se crea por test para evitar que quede abierto y bloquee la BD en Windows
+@pytest.fixture(autouse=True)
+def use_test_client():
+    """Create a TestClient per test and expose it as global `client` so existing
+    tests can reference the name without changing their signatures.
+    The fixture is autouse so it's created after the setup_and_teardown fixture
+    (which is defined earlier) and closed before that fixture's teardown runs.
+    """
+    with TestClient(app) as c:
+        globals()['client'] = c
+        try:
+            yield
+        finally:
+            # Ensure the global is removed after closing
+            globals().pop('client', None)
 
 @pytest.fixture(autouse=True)
 def setup_and_teardown():
