@@ -216,7 +216,7 @@ TP3/
 ```
 
 ## Autor
-[Tu nombre]
+[Jimenez Alvaro Agustin]
 
 ## Fecha de entrega
 17 de Octubre de 2025 - 21:00hs
