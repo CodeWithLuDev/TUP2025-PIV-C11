@@ -2,7 +2,7 @@ from pydantic import BaseModel, Field, field_validator
 from typing import Optional, Literal
 from datetime import datetime
 
-# ============ MODELOS DE PROYECTO ============
+# MODELOS DE PROYECT
 
 class ProyectoCreate(BaseModel):
     nombre: str = Field(..., min_length=1, description="Nombre del proyecto")
@@ -33,7 +33,7 @@ class Proyecto(BaseModel):
     fecha_creacion: str
     total_tareas: Optional[int] = 0
 
-# ============ MODELOS DE TAREA ============
+# MODELOS DE TAREAS
 
 class TareaCreate(BaseModel):
     descripcion: str = Field(..., min_length=1, description="Descripción de la tarea")
@@ -69,7 +69,7 @@ class Tarea(BaseModel):
     proyecto_nombre: Optional[str] = None
     fecha_creacion: str
 
-# ============ MODELOS DE RESPUESTA ============
+# MODELOS DE RESPUESTA
 
 class ResumenProyecto(BaseModel):
     proyecto_id: int

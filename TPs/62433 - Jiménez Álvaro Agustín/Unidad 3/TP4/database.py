@@ -10,7 +10,7 @@ def get_db():
     """Context manager para conexiones a la base de datos"""
     conn = sqlite3.connect(DB_NAME)
     conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA foreign_keys = ON")  # Habilitar claves foráneas
+    conn.execute("PRAGMA foreign_keys = ON")  
     try:
         yield conn
     finally:
@@ -46,7 +46,7 @@ def init_db():
         
         conn.commit()
 
-# ============ FUNCIONES DE PROYECTOS ============
+# FUNCIONES DE PROYECTOS 
 
 def crear_proyecto(nombre: str, descripcion: Optional[str] = None):
     """Crea un nuevo proyecto"""
@@ -62,7 +62,7 @@ def crear_proyecto(nombre: str, descripcion: Optional[str] = None):
             conn.commit()
             return cursor.lastrowid
         except sqlite3.IntegrityError:
-            return None  # Nombre duplicado
+            return None  
 
 def obtener_proyecto(proyecto_id: int):
     """Obtiene un proyecto por ID con contador de tareas"""
@@ -103,7 +103,7 @@ def actualizar_proyecto(proyecto_id: int, nombre: Optional[str], descripcion: Op
     with get_db() as conn:
         cursor = conn.cursor()
         
-        # Verificar que existe
+        
         cursor.execute("SELECT * FROM proyectos WHERE id = ?", (proyecto_id,))
         if not cursor.fetchone():
             return None
@@ -130,7 +130,7 @@ def actualizar_proyecto(proyecto_id: int, nombre: Optional[str], descripcion: Op
             conn.commit()
             return proyecto_id
         except sqlite3.IntegrityError:
-            return False  # Nombre duplicado
+            return False  
 
 def eliminar_proyecto(proyecto_id: int):
     """Elimina un proyecto y sus tareas (CASCADE)"""
@@ -145,14 +145,14 @@ def eliminar_proyecto(proyecto_id: int):
         conn.commit()
         return True
 
-# ============ FUNCIONES DE TAREAS ============
+# FUNCIONES DE TAREAS
 
 def crear_tarea(descripcion: str, estado: str, prioridad: str, proyecto_id: int):
     """Crea una nueva tarea"""
     with get_db() as conn:
         cursor = conn.cursor()
         
-        # Verificar que el proyecto existe
+        
         cursor.execute("SELECT id FROM proyectos WHERE id = ?", (proyecto_id,))
         if not cursor.fetchone():
             return None
@@ -223,7 +223,7 @@ def obtener_tareas_por_proyecto(proyecto_id: int, estado: Optional[str] = None,
     with get_db() as conn:
         cursor = conn.cursor()
         
-        # Verificar que el proyecto existe
+        
         cursor.execute("SELECT id FROM proyectos WHERE id = ?", (proyecto_id,))
         if not cursor.fetchone():
             return None
@@ -258,17 +258,17 @@ def actualizar_tarea(tarea_id: int, descripcion: Optional[str], estado: Optional
     with get_db() as conn:
         cursor = conn.cursor()
         
-        # Verificar que existe
+        
         cursor.execute("SELECT * FROM tareas WHERE id = ?", (tarea_id,))
         tarea = cursor.fetchone()
         if not tarea:
             return None
         
-        # Si se cambia el proyecto, verificar que existe
+        
         if proyecto_id is not None:
             cursor.execute("SELECT id FROM proyectos WHERE id = ?", (proyecto_id,))
             if not cursor.fetchone():
-                return False  # Proyecto no existe
+                return False  
         
         updates = []
         params = []
@@ -312,7 +312,7 @@ def eliminar_tarea(tarea_id: int):
         conn.commit()
         return True
 
-# ============ FUNCIONES DE ESTADÍSTICAS ============
+# FUNCIONES DE ESTADÍSTICAS
 
 def obtener_resumen_proyecto(proyecto_id: int):
     """Obtiene estadísticas de un proyecto"""

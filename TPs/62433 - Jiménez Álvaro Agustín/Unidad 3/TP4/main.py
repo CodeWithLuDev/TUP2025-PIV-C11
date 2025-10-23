@@ -19,7 +19,7 @@ app = FastAPI(
 def startup_event():
     db.init_db()
 
-# ==================== ENDPOINTS RAÍZ ====================
+# ENDPOINTS RAÍZ
 
 @app.get("/")
 def read_root():
@@ -33,7 +33,7 @@ def read_root():
         }
     }
 
-# ==================== ENDPOINTS DE PROYECTOS ====================
+# ENDPOINTS DE PROYECTOS
 
 @app.get("/proyectos", response_model=list[Proyecto])
 def listar_proyectos(nombre: Optional[str] = None):
@@ -129,7 +129,7 @@ def eliminar_proyecto(proyecto_id: int):
     
     return {"mensaje": "Proyecto eliminado correctamente (incluyendo todas sus tareas)"}
 
-# ==================== ENDPOINTS DE TAREAS ====================
+# ENDPOINTS DE TAREAS
 
 @app.get("/tareas", response_model=list[Tarea])
 def listar_tareas(
@@ -275,7 +275,7 @@ def eliminar_tarea(tarea_id: int):
     
     return {"mensaje": "Tarea eliminada correctamente"}
 
-# ==================== ENDPOINTS DE RESUMEN Y ESTADÍSTICAS ====================
+# ENDPOINTS DE RESUMEN Y ESTADÍSTICAS
 
 @app.get("/proyectos/{proyecto_id}/resumen", response_model=ResumenProyecto)
 def obtener_resumen_proyecto(proyecto_id: int):
@@ -296,7 +296,7 @@ def obtener_resumen_general():
     resumen = db.obtener_resumen_general()
     return ResumenGeneral(**resumen)
 
-# ==================== MANEJO DE ERRORES ====================
+# MANEJO DE ERRORES 
 
 @app.exception_handler(HTTPException)
 async def http_exception_handler(request, exc):
