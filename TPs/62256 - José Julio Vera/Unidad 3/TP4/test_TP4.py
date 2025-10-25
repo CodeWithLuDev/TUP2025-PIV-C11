@@ -1,684 +1,286 @@
+# test_TP4.py
 import pytest
-from fastapi.testclient import TestClient
-from main import app, init_db, DB_NAME
-import sqlite3
-import os
+import httpx
+from typing import Dict, Any, List
+import time
 
-client = TestClient(app)
+# URL base de tu aplicación FastAPI
+BASE_URL = "http://127.0.0.1:8000"
+client = httpx.Client(base_url=BASE_URL)
 
-@pytest.fixture(autouse=True)
-def setup_and_teardown():
-    """Configuración antes y después de cada test"""
-   
-    if os.path.exists(DB_NAME):
-        os.remove(DB_NAME)
-    
-    
-    init_db()
+# ------------------------------------------------------------------------------
+# Fixtures y Setup Global
+# ------------------------------------------------------------------------------
+
+@pytest.fixture(scope="module", autouse=True)
+def setup_teardown_module():
+    """Fixture para asegurar que la API esté viva y limpiar la DB antes y después."""
+    try:
+        # 1. Verificar conexión y limpiar DB antes de empezar
+        client.delete("/limpiar_db")
+        print("\n--- DB Limpiada al inicio de la sesión ---")
+    except httpx.ConnectError:
+        pytest.fail(f"No se pudo conectar a FastAPI en {BASE_URL}. Asegúrate de que uvicorn main:app --reload esté corriendo.")
     
     yield
     
-    
-    if os.path.exists(DB_NAME):
-        os.remove(DB_NAME)
+    # 2. Limpiar al finalizar
+    client.delete("/limpiar_db")
+    print("--- DB Limpiada al finalizar la sesión ---")
 
 
+@pytest.fixture(scope="function")
+def setup_datos_relacionales():
+    """Crea Proyectos y Tareas para tests de filtros y resúmenes."""
+    client.delete("/limpiar_db")
+    
+    # --- PROYECTOS ---
+    p1 = client.post("/proyectos", json={"nombre": "Proyecto Alpha", "descripcion": "Tareas urgentes"}) # ID 1
+    time.sleep(0.01)
+    p2 = client.post("/proyectos", json={"nombre": "Proyecto Beta", "descripcion": "Tareas de baja prioridad"}) # ID 2
+    time.sleep(0.01)
+    p3 = client.post("/proyectos", json={"nombre": "UX/UI Design", "descripcion": "Tareas de diseño"}) # ID 3
 
-def test_1_1_tabla_proyectos_existe():
-    """Verifica que la tabla proyectos existe con estructura correcta"""
-    conn = sqlite3.connect(DB_NAME)
-    cursor = conn.cursor()
-    
+    # --- TAREAS ---
+    # P1 (Alpha) tiene 4 tareas
+    client.post("/proyectos/1/tareas", json={"descripcion": "Definir alcance", "estado": "completada", "prioridad": "alta"}) # ID 1
+    client.post("/proyectos/1/tareas", json={"descripcion": "Reunion de equipo", "estado": "en_progreso", "prioridad": "alta"}) # ID 2
+    client.post("/proyectos/1/tareas", json={"descripcion": "Analisis de datos", "estado": "pendiente", "prioridad": "media"}) # ID 3
+    client.post("/proyectos/1/tareas", json={"descripcion": "Enviar reporte", "estado": "pendiente", "prioridad": "baja"}) # ID 4
 
-    cursor.execute("""
-        SELECT name FROM sqlite_master 
-        WHERE type='table' AND name='proyectos'
-    """)
-    assert cursor.fetchone() is not None
-   
-    cursor.execute("PRAGMA table_info(proyectos)")
-    columnas = {col[1]: col for col in cursor.fetchall()}
-    
-    assert 'id' in columnas
-    assert 'nombre' in columnas
-    assert 'descripcion' in columnas
-    assert 'fecha_creacion' in columnas
-    
-  
-    assert columnas['nombre'][3] == 1 
-    
-    conn.close()
+    # P2 (Beta) tiene 2 tareas
+    client.post("/proyectos/2/tareas", json={"descripcion": "Comprar cafe", "estado": "completada", "prioridad": "baja"}) # ID 5
+    client.post("/proyectos/2/tareas", json={"descripcion": "Testear funcionalidad", "estado": "en_progreso", "prioridad": "alta"}) # ID 6
 
-def test_1_2_tabla_tareas_con_clave_foranea():
-    """Verifica que la tabla tareas tiene clave foránea a proyectos"""
-    conn = sqlite3.connect(DB_NAME)
-    cursor = conn.cursor()
+    # P3 (UX/UI) tiene 1 tarea
+    client.post("/proyectos/3/tareas", json={"descripcion": "Maquetar landing page", "estado": "pendiente", "prioridad": "media"}) # ID 7
     
-   
-    cursor.execute("""
-        SELECT name FROM sqlite_master 
-        WHERE type='table' AND name='tareas'
-    """)
-    assert cursor.fetchone() is not None
-    
-    cursor.execute("PRAGMA table_info(tareas)")
-    columnas = {col[1]: col for col in cursor.fetchall()}
-    
-    assert 'proyecto_id' in columnas
-    
-  
-    cursor.execute("PRAGMA foreign_key_list(tareas)")
-    foreign_keys = cursor.fetchall()
-    
-    assert len(foreign_keys) > 0
-    assert foreign_keys[0][2] == 'proyectos'  # tabla referenciada
-    assert foreign_keys[0][3] == 'proyecto_id'  # columna local
-    
-    conn.close()
+    # Resumen esperado:
+    # Alpha (1): C:1, EP:1, P:2. Prioridad: Alta:2, Media:1, Baja:1. Total: 4
+    # Beta (2): C:1, EP:1, P:0. Prioridad: Baja:1, Alta:1. Total: 2
+    # UX/UI (3): C:0, EP:0, P:1. Prioridad: Media:1. Total: 1
+    # General: Proyectos: 3. Tareas: 7.
 
+# ------------------------------------------------------------------------------
+# 1. TESTS DE PROYECTOS (CRUD, UNICIDAD)
+# ------------------------------------------------------------------------------
 
-def test_2_1_crear_proyecto_exitoso():
-    """Test: Crear un proyecto válido"""
-    response = client.post("/proyectos", json={
-        "nombre": "Proyecto Test",
-        "descripcion": "Descripción de prueba"
-    })
-    
+def test_01_crear_proyecto_exitosamente():
+    """POST /proyectos - Creación exitosa (ID 1)."""
+    client.delete("/limpiar_db")
+    data = {"nombre": "Nuevo Sistema Contable", "descripcion": "Migracion de datos"}
+    response = client.post("/proyectos", json=data)
     assert response.status_code == 201
-    data = response.json()
-    assert data["nombre"] == "Proyecto Test"
-    assert data["descripcion"] == "Descripción de prueba"
-    assert "fecha_creacion" in data
-    assert "id" in data
+    proj = response.json()
+    assert proj["id"] == 1
+    assert proj["nombre"] == "Nuevo Sistema Contable"
+    assert "fecha_creacion" in proj
 
-def test_2_2_crear_proyecto_nombre_duplicado():
-    """Test: Intentar crear proyecto con nombre duplicado debe fallar"""
-   
-    client.post("/proyectos", json={
-        "nombre": "Proyecto Único",
-        "descripcion": "Primera vez"
-    })
-    
-    
-    response = client.post("/proyectos", json={
-        "nombre": "Proyecto Único",
-        "descripcion": "Segunda vez"
-    })
-    
+def test_02_crear_proyecto_nombre_vacio():
+    """POST /proyectos - Debe retornar 422 por nombre vacío."""
+    data = {"nombre": "", "descripcion": "Test"}
+    response = client.post("/proyectos", json=data)
+    assert response.status_code == 422
+
+def test_03_crear_proyecto_duplicado():
+    """POST /proyectos - Debe retornar 409 por nombre duplicado (UNIQUE)."""
+    data = {"nombre": "Nuevo Sistema Contable"}
+    response = client.post("/proyectos", json=data) # Intentar crear el mismo nombre que en test_01
+    assert response.status_code == 409
+    assert "ya existe" in response.json().get("detail", {}).get("error", "")
+
+def test_04_obtener_proyecto_y_contador():
+    """GET /proyectos/{id} - Debe obtener el proyecto 1 y tener 0 tareas."""
+    response = client.get("/proyectos/1")
+    assert response.status_code == 200
+    proj = response.json()
+    assert proj["id"] == 1
+    assert proj["total_tareas"] == 0 # No hemos añadido tareas aún
+
+def test_05_actualizar_proyecto_existente():
+    """PUT /proyectos/{id} - Actualización exitosa."""
+    update_data = {"nombre": "Sistema Contable V2.0", "descripcion": "Migracion de datos finalizada"}
+    response = client.put("/proyectos/1", json=update_data)
+    assert response.status_code == 200
+    assert response.json()["nombre"] == "Sistema Contable V2.0"
+
+def test_06_actualizar_proyecto_a_nombre_duplicado():
+    """PUT /proyectos/{id} - Debe retornar 409 al intentar duplicar el nombre."""
+    client.post("/proyectos", json={"nombre": "Otro Proyecto"}) # ID 2
+    update_data = {"nombre": "Otro Proyecto", "descripcion": "Intento de duplicado"}
+    response = client.put("/proyectos/1", json=update_data)
     assert response.status_code == 409
 
-def test_2_3_listar_proyectos():
-    """Test: Listar todos los proyectos"""
-    
-    client.post("/proyectos", json={"nombre": "Proyecto A"})
-    client.post("/proyectos", json={"nombre": "Proyecto B"})
-    
-    response = client.get("/proyectos")
-    
-    assert response.status_code == 200
-    data = response.json()
-    assert len(data) == 2
+# ------------------------------------------------------------------------------
+# 2. TESTS DE INTEGRIDAD REFERENCIAL Y TAREAS (1:N)
+# ------------------------------------------------------------------------------
 
-def test_2_4_obtener_proyecto_con_contador():
-    """Test: Obtener proyecto específico con contador de tareas"""
-   
-    response = client.post("/proyectos", json={"nombre": "Proyecto Counter"})
-    proyecto_id = response.json()["id"]
-    
- 
-    client.post(f"/proyectos/{proyecto_id}/tareas", json={
-        "descripcion": "Tarea 1"
-    })
-    client.post(f"/proyectos/{proyecto_id}/tareas", json={
-        "descripcion": "Tarea 2"
-    })
-    
-   
-    response = client.get(f"/proyectos/{proyecto_id}")
-    
-    assert response.status_code == 200
-    data = response.json()
-    assert data["total_tareas"] == 2
-
-def test_2_5_actualizar_proyecto():
-    """Test: Actualizar proyecto existente"""
-
-    response = client.post("/proyectos", json={"nombre": "Proyecto Original"})
-    proyecto_id = response.json()["id"]
-    
-   
-    response = client.put(f"/proyectos/{proyecto_id}", json={
-        "nombre": "Proyecto Modificado",
-        "descripcion": "Nueva descripción"
-    })
-    
-    assert response.status_code == 200
-    data = response.json()
-    assert data["nombre"] == "Proyecto Modificado"
-    assert data["descripcion"] == "Nueva descripción"
-
-def test_2_6_eliminar_proyecto_y_tareas_cascade():
-    """Test: Eliminar proyecto debe eliminar tareas (CASCADE)"""
-   
-    response = client.post("/proyectos", json={"nombre": "Proyecto a Eliminar"})
-    proyecto_id = response.json()["id"]
-    
- 
-    client.post(f"/proyectos/{proyecto_id}/tareas", json={"descripcion": "Tarea 1"})
-    client.post(f"/proyectos/{proyecto_id}/tareas", json={"descripcion": "Tarea 2"})
-    
-   
-    response = client.delete(f"/proyectos/{proyecto_id}")
-    
-    assert response.status_code == 200
-    assert response.json()["tareas_eliminadas"] == 2
-    
-    response = client.get("/tareas")
-    assert len(response.json()) == 0
-
-
-def test_3_1_crear_tarea_en_proyecto():
-    """Test: Crear tarea dentro de un proyecto"""
-  
-    response = client.post("/proyectos", json={"nombre": "Proyecto para Tareas"})
-    proyecto_id = response.json()["id"]
-    
-
-    response = client.post(f"/proyectos/{proyecto_id}/tareas", json={
-        "descripcion": "Mi tarea",
-        "estado": "pendiente",
-        "prioridad": "alta"
-    })
-    
+def test_07_crear_tarea_en_proyecto_existente():
+    """POST /proyectos/{id}/tareas - Creación exitosa (ID 1)."""
+    tarea_data = {"descripcion": "Instalar DB", "estado": "pendiente", "prioridad": "alta"}
+    response = client.post("/proyectos/1/tareas", json=tarea_data)
     assert response.status_code == 201
-    data = response.json()
-    assert data["descripcion"] == "Mi tarea"
-    assert data["proyecto_id"] == proyecto_id
+    tarea = response.json()
+    assert tarea["proyecto_id"] == 1
+    assert "proyecto_nombre" in tarea # Verifica que el JOIN funcione
+    assert tarea["proyecto_nombre"] == "Sistema Contable V2.0"
 
-def test_3_2_crear_tarea_proyecto_inexistente():
-    """Test: Intentar crear tarea en proyecto inexistente debe fallar"""
-    response = client.post("/proyectos/999/tareas", json={
-        "descripcion": "Tarea huérfana"
-    })
-    
+def test_08_crear_tarea_en_proyecto_inexistente():
+    """POST /proyectos/{id}/tareas - Debe retornar 400 (Fallo Clave Foránea)."""
+    tarea_data = {"descripcion": "Tarea huérfana", "estado": "pendiente", "prioridad": "baja"}
+    response = client.post("/proyectos/999/tareas", json=tarea_data)
     assert response.status_code == 400
+    assert "no existe (Fallo de Clave Foránea)" in response.json().get("detail", {}).get("error", "")
 
-def test_3_3_listar_tareas_de_proyecto():
-    """Test: Listar tareas de un proyecto específico"""
-   
-    r1 = client.post("/proyectos", json={"nombre": "Proyecto 1"})
-    r2 = client.post("/proyectos", json={"nombre": "Proyecto 2"})
+def test_09_eliminar_proyecto_con_cascade():
+    """DELETE /proyectos/{id} - Debe eliminar el proyecto y sus tareas asociadas."""
+    # Tarea ID 1 fue creada en el proyecto 1
+    response_delete = client.delete("/proyectos/1")
+    assert response_delete.status_code == 200
     
-    proyecto_id_1 = r1.json()["id"]
-    proyecto_id_2 = r2.json()["id"]
+    # 1. Verificar que el proyecto fue eliminado
+    response_get_proj = client.get("/proyectos/1")
+    assert response_get_proj.status_code == 404
     
-  
-    client.post(f"/proyectos/{proyecto_id_1}/tareas", json={"descripcion": "Tarea P1-1"})
-    client.post(f"/proyectos/{proyecto_id_1}/tareas", json={"descripcion": "Tarea P1-2"})
+    # 2. Verificar que la tarea también fue eliminada (CASCADE)
+    response_get_tarea = client.get("/tareas?proyecto_id=1")
+    assert response_get_tarea.status_code == 200
+    assert len(response_get_tarea.json()) == 0
     
-   
-    client.post(f"/proyectos/{proyecto_id_2}/tareas", json={"descripcion": "Tarea P2-1"})
-    
-    response = client.get(f"/proyectos/{proyecto_id_1}/tareas")
-    
+    # 3. Eliminar proyecto inexistente debe dar 404
+    response_404 = client.delete("/proyectos/1")
+    assert response_404.status_code == 404
+
+# ------------------------------------------------------------------------------
+# 3. TESTS DE FILTROS Y BÚSQUEDAS AVANZADAS
+# ------------------------------------------------------------------------------
+
+def test_10_filtrar_proyectos_por_nombre(setup_datos_relacionales):
+    """GET /proyectos?nombre=alpha - Debe devolver solo 1 proyecto (Alpha)."""
+    response = client.get("/proyectos", params={"nombre": "Alpha"})
     assert response.status_code == 200
-    data = response.json()
-    assert len(data) == 2
+    proyectos = response.json()
+    assert len(proyectos) == 1
+    assert proyectos[0]["nombre"] == "Proyecto Alpha"
 
-def test_3_4_listar_tareas_proyecto_inexistente():
-    """Test: Listar tareas de proyecto inexistente debe devolver 404"""
+def test_11_listar_tareas_de_proyecto_inexistente():
+    """GET /proyectos/999/tareas - Debe retornar 404."""
     response = client.get("/proyectos/999/tareas")
     assert response.status_code == 404
 
-def test_3_5_actualizar_tarea_cambiar_proyecto():
-    """Test: Actualizar tarea y moverla a otro proyecto"""
-
-    r1 = client.post("/proyectos", json={"nombre": "Proyecto Origen"})
-    r2 = client.post("/proyectos", json={"nombre": "Proyecto Destino"})
-    
-    proyecto_id_1 = r1.json()["id"]
-    proyecto_id_2 = r2.json()["id"]
-    
-    response = client.post(f"/proyectos/{proyecto_id_1}/tareas", json={
-        "descripcion": "Tarea a mover"
-    })
-    tarea_id = response.json()["id"]
-    
-    response = client.put(f"/tareas/{tarea_id}", json={
-        "proyecto_id": proyecto_id_2
-    })
-    
+def test_12_listar_tareas_de_proyecto_especifico(setup_datos_relacionales):
+    """GET /proyectos/1/tareas - Debe devolver 4 tareas de Alpha."""
+    response = client.get("/proyectos/1/tareas")
     assert response.status_code == 200
-    data = response.json()
-    assert data["proyecto_id"] == proyecto_id_2
+    tareas = response.json()
+    assert len(tareas) == 4
+    assert all(t["proyecto_id"] == 1 for t in tareas)
 
-def test_3_6_eliminar_tarea():
-    """Test: Eliminar una tarea específica"""
-    # Crear proyecto y tarea
-    response = client.post("/proyectos", json={"nombre": "Proyecto"})
-    proyecto_id = response.json()["id"]
-    
-    response = client.post(f"/proyectos/{proyecto_id}/tareas", json={
-        "descripcion": "Tarea a eliminar"
-    })
-    tarea_id = response.json()["id"]
-    
-    # Eliminar tarea
-    response = client.delete(f"/tareas/{tarea_id}")
-    
+def test_13_filtrar_todas_las_tareas_por_estado_y_prioridad(setup_datos_relacionales):
+    """GET /tareas?estado=pendiente&prioridad=media - Debe devolver 2 tareas (ID 3, 7)."""
+    response = client.get("/tareas", params={"estado": "pendiente", "prioridad": "media"})
     assert response.status_code == 200
+    tareas = response.json()
+    assert len(tareas) == 2
+    ids = [t['id'] for t in tareas]
+    assert 3 in ids and 7 in ids
     
-    # Verificar que fue eliminada
-    response = client.get("/tareas")
-    assert len(response.json()) == 0
-
-# ============== 4. FILTROS Y BÚSQUEDAS AVANZADAS ==============
-
-def test_4_1_filtrar_proyectos_por_nombre():
-    """Test: Buscar proyectos por nombre parcial"""
-    client.post("/proyectos", json={"nombre": "Desarrollo Web"})
-    client.post("/proyectos", json={"nombre": "Desarrollo Mobile"})
-    client.post("/proyectos", json={"nombre": "Marketing Digital"})
-    
-    response = client.get("/proyectos?nombre=Desarrollo")
-    
+def test_14_filtrar_todas_las_tareas_por_proyecto_id(setup_datos_relacionales):
+    """GET /tareas?proyecto_id=2 - Debe devolver 2 tareas del Proyecto Beta (ID 5, 6)."""
+    response = client.get("/tareas", params={"proyecto_id": 2})
     assert response.status_code == 200
-    data = response.json()
-    assert len(data) == 2
+    tareas = response.json()
+    assert len(tareas) == 2
+    assert all(t["proyecto_id"] == 2 for t in tareas)
 
-def test_4_2_filtrar_tareas_por_estado():
-    """Test: Filtrar tareas por estado"""
-    # Crear proyecto
-    response = client.post("/proyectos", json={"nombre": "Proyecto"})
-    proyecto_id = response.json()["id"]
-    
-    # Crear tareas con diferentes estados
-    client.post(f"/proyectos/{proyecto_id}/tareas", json={
-        "descripcion": "Tarea 1",
-        "estado": "pendiente"
-    })
-    client.post(f"/proyectos/{proyecto_id}/tareas", json={
-        "descripcion": "Tarea 2",
-        "estado": "completada"
-    })
-    client.post(f"/proyectos/{proyecto_id}/tareas", json={
-        "descripcion": "Tarea 3",
-        "estado": "completada"
-    })
-    
-    response = client.get("/tareas?estado=completada")
-    
+def test_15_ordenamiento_descendente_global(setup_datos_relacionales):
+    """GET /tareas?orden=desc - Debe devolver tareas ordenadas de la más reciente (7) a la más antigua (1)."""
+    response = client.get("/tareas", params={"orden": "desc"})
     assert response.status_code == 200
-    data = response.json()
-    assert len(data) == 2
+    tareas = response.json()
+    assert [t['id'] for t in tareas] == [7, 6, 5, 4, 3, 2, 1]
 
-def test_4_3_filtrar_tareas_por_prioridad():
-    """Test: Filtrar tareas por prioridad"""
-    response = client.post("/proyectos", json={"nombre": "Proyecto"})
-    proyecto_id = response.json()["id"]
-    
-    client.post(f"/proyectos/{proyecto_id}/tareas", json={
-        "descripcion": "Tarea alta",
-        "prioridad": "alta"
-    })
-    client.post(f"/proyectos/{proyecto_id}/tareas", json={
-        "descripcion": "Tarea baja",
-        "prioridad": "baja"
-    })
-    
-    response = client.get("/tareas?prioridad=alta")
-    
+def test_16_mover_tarea_a_otro_proyecto(setup_datos_relacionales):
+    """PUT /tareas/{id} - Mover Tarea 1 (Alpha) a Proyecto 2 (Beta)."""
+    # Tarea 1 está en Proyecto 1.
+    update_data = {"descripcion": "Definir alcance (Movido)", "estado": "completada", "prioridad": "alta", "proyecto_id": 2}
+    response = client.put("/tareas/1", json=update_data)
     assert response.status_code == 200
-    data = response.json()
-    assert len(data) == 1
-    assert data[0]["prioridad"] == "alta"
+    assert response.json()["proyecto_id"] == 2
+    
+    # 1. Verificar que ya no está en Proyecto 1
+    response_p1 = client.get("/proyectos/1/tareas")
+    assert len(response_p1.json()) == 3
+    
+    # 2. Verificar que ahora está en Proyecto 2
+    response_p2 = client.get("/proyectos/2/tareas")
+    assert len(response_p2.json()) == 3
+    assert any(t["id"] == 1 for t in response_p2.json())
 
-def test_4_4_filtros_multiples_combinados():
-    """Test: Combinar múltiples filtros simultáneamente"""
-    response = client.post("/proyectos", json={"nombre": "Proyecto"})
-    proyecto_id = response.json()["id"]
-    
-    client.post(f"/proyectos/{proyecto_id}/tareas", json={
-        "descripcion": "Tarea 1",
-        "estado": "completada",
-        "prioridad": "alta"
-    })
-    client.post(f"/proyectos/{proyecto_id}/tareas", json={
-        "descripcion": "Tarea 2",
-        "estado": "completada",
-        "prioridad": "baja"
-    })
-    client.post(f"/proyectos/{proyecto_id}/tareas", json={
-        "descripcion": "Tarea 3",
-        "estado": "pendiente",
-        "prioridad": "alta"
-    })
-    
-    response = client.get("/tareas?estado=completada&prioridad=alta")
-    
+def test_17_mover_tarea_a_proyecto_inexistente():
+    """PUT /tareas/{id} - Debe fallar al mover a proyecto 999 (400)."""
+    update_data = {"descripcion": "Falla de movimiento", "estado": "completada", "prioridad": "alta", "proyecto_id": 999}
+    response = client.put("/tareas/1", json=update_data)
+    assert response.status_code == 400
+    assert "no existe (Fallo de Clave Foránea)" in response.json().get("detail", {}).get("error", "")
+
+# ------------------------------------------------------------------------------
+# 4. TESTS DE RESUMENES Y ESTADÍSTICAS
+# ------------------------------------------------------------------------------
+
+def test_18_resumen_proyecto_especifico(setup_datos_relacionales):
+    """GET /proyectos/1/resumen - Resumen para Proyecto Alpha (ID 1)."""
+    response = client.get("/proyectos/1/resumen")
     assert response.status_code == 200
-    data = response.json()
-    assert len(data) == 1
-    assert data[0]["estado"] == "completada"
-    assert data[0]["prioridad"] == "alta"
+    resumen = response.json()
+    
+    assert resumen["proyecto_nombre"] == "Proyecto Alpha"
+    assert resumen["total_tareas"] == 4
+    
+    # Alpha (1): C:1, EP:1, P:2. Prioridad: Alta:2, Media:1, Baja:1. Total: 4
+    assert resumen["por_estado"] == {"pendiente": 2, "en_progreso": 1, "completada": 1}
+    assert resumen["por_prioridad"] == {"baja": 1, "media": 1, "alta": 2}
 
-def test_4_5_ordenar_tareas_ascendente():
-    """Test: Ordenar tareas por fecha ascendente"""
-    response = client.post("/proyectos", json={"nombre": "Proyecto"})
-    proyecto_id = response.json()["id"]
-    
-    r1 = client.post(f"/proyectos/{proyecto_id}/tareas", json={"descripcion": "Primera"})
-    r2 = client.post(f"/proyectos/{proyecto_id}/tareas", json={"descripcion": "Segunda"})
-    r3 = client.post(f"/proyectos/{proyecto_id}/tareas", json={"descripcion": "Tercera"})
-    
-    response = client.get("/tareas?orden=asc")
-    
-    assert response.status_code == 200
-    data = response.json()
-    assert data[0]["descripcion"] == "Primera"
-    assert data[-1]["descripcion"] == "Tercera"
-
-def test_4_6_ordenar_tareas_descendente():
-    """Test: Ordenar tareas por fecha descendente (más recientes primero)"""
-    response = client.post("/proyectos", json={"nombre": "Proyecto"})
-    proyecto_id = response.json()["id"]
-    
-    client.post(f"/proyectos/{proyecto_id}/tareas", json={"descripcion": "Primera"})
-    client.post(f"/proyectos/{proyecto_id}/tareas", json={"descripcion": "Segunda"})
-    client.post(f"/proyectos/{proyecto_id}/tareas", json={"descripcion": "Tercera"})
-    
-    response = client.get("/tareas?orden=desc")
-    
-    assert response.status_code == 200
-    data = response.json()
-    assert data[0]["descripcion"] == "Tercera"
-    assert data[-1]["descripcion"] == "Primera"
-
-# ============== 5. ENDPOINTS DE RESUMEN Y ESTADÍSTICAS ==============
-
-def test_5_1_resumen_proyecto():
-    """Test: Obtener resumen estadístico de un proyecto"""
-    response = client.post("/proyectos", json={"nombre": "Proyecto Stats"})
-    proyecto_id = response.json()["id"]
-    
-    # Crear tareas variadas
-    client.post(f"/proyectos/{proyecto_id}/tareas", json={
-        "descripcion": "T1",
-        "estado": "pendiente",
-        "prioridad": "alta"
-    })
-    client.post(f"/proyectos/{proyecto_id}/tareas", json={
-        "descripcion": "T2",
-        "estado": "completada",
-        "prioridad": "baja"
-    })
-    client.post(f"/proyectos/{proyecto_id}/tareas", json={
-        "descripcion": "T3",
-        "estado": "completada",
-        "prioridad": "alta"
-    })
-    
-    response = client.get(f"/proyectos/{proyecto_id}/resumen")
-    
-    assert response.status_code == 200
-    data = response.json()
-    assert data["proyecto_id"] == proyecto_id
-    assert data["proyecto_nombre"] == "Proyecto Stats"
-    assert data["total_tareas"] == 3
-    assert data["por_estado"]["pendiente"] == 1
-    assert data["por_estado"]["completada"] == 2
-    assert data["por_prioridad"]["alta"] == 2
-    assert data["por_prioridad"]["baja"] == 1
-
-def test_5_2_resumen_proyecto_inexistente():
-    """Test: Resumen de proyecto inexistente debe devolver 404"""
+def test_19_resumen_proyecto_inexistente():
+    """GET /proyectos/999/resumen - Debe retornar 404."""
     response = client.get("/proyectos/999/resumen")
     assert response.status_code == 404
 
-def test_5_3_resumen_general():
-    """Test: Obtener resumen general de la aplicación"""
-    # Crear proyectos
-    r1 = client.post("/proyectos", json={"nombre": "Proyecto A"})
-    r2 = client.post("/proyectos", json={"nombre": "Proyecto B"})
-    
-    proyecto_id_1 = r1.json()["id"]
-    proyecto_id_2 = r2.json()["id"]
-    
-    # Crear tareas en proyecto 1
-    for i in range(5):
-        client.post(f"/proyectos/{proyecto_id_1}/tareas", json={
-            "descripcion": f"Tarea {i}",
-            "estado": "pendiente"
-        })
-    
-    # Crear tareas en proyecto 2
-    for i in range(3):
-        client.post(f"/proyectos/{proyecto_id_2}/tareas", json={
-            "descripcion": f"Tarea {i}",
-            "estado": "completada"
-        })
+def test_20_resumen_general(setup_datos_relacionales):
+    """GET /resumen - Resumen de toda la aplicación."""
+    # Tarea 6 está en P2 (Beta). Tarea 1, 2, 3, 4 en P1 (Alpha). Tarea 5 en P2 (Beta). Tarea 7 en P3 (UX/UI)
+    # Total Proyectos: 3. Total Tareas: 7.
+    # Tareas por estado: Pendiente: 3 (3, 4, 7). En Progreso: 2 (2, 6). Completada: 2 (1, 5).
+    # P1 (Alpha) tiene 4 tareas (máximo).
     
     response = client.get("/resumen")
-    
     assert response.status_code == 200
-    data = response.json()
-    assert data["total_proyectos"] == 2
-    assert data["total_tareas"] == 8
-    assert data["tareas_por_estado"]["pendiente"] == 5
-    assert data["tareas_por_estado"]["completada"] == 3
-    assert data["proyecto_con_mas_tareas"]["id"] == proyecto_id_1
-    assert data["proyecto_con_mas_tareas"]["cantidad_tareas"] == 5
-
-def test_5_4_resumen_general_vacio():
-    """Test: Resumen general sin proyectos"""
+    resumen = response.json()
+    
+    assert resumen["total_proyectos"] == 3
+    assert resumen["total_tareas"] == 7
+    
+    assert resumen["tareas_por_estado"] == {
+        "pendiente": 3, 
+        "en_progreso": 2, 
+        "completada": 2
+    }
+    
+    assert resumen["proyecto_con_mas_tareas"]["id"] == 1
+    assert resumen["proyecto_con_mas_tareas"]["nombre"] == "Proyecto Alpha"
+    assert resumen["proyecto_con_mas_tareas"]["cantidad_tareas"] == 4
+    
+def test_21_resumen_general_sin_tareas():
+    """GET /resumen - Caso de borde: 0 tareas."""
+    client.delete("/limpiar_db")
+    client.post("/proyectos", json={"nombre": "Vacio"}) # ID 1
+    
     response = client.get("/resumen")
-    
     assert response.status_code == 200
-    data = response.json()
-    assert data["total_proyectos"] == 0
-    assert data["total_tareas"] == 0
+    resumen = response.json()
+    
+    assert resumen["total_proyectos"] == 1
+    assert resumen["total_tareas"] == 0
+    assert resumen["proyecto_con_mas_tareas"]["id"] == 0
 
-# ============== 6. VALIDACIÓN CON PYDANTIC MODELS ==============
-
-def test_6_1_validacion_proyecto_nombre_vacio():
-    """Test: Validar que nombre de proyecto no puede estar vacío"""
-    response = client.post("/proyectos", json={
-        "nombre": "   ",
-        "descripcion": "Test"
-    })
-    
-    assert response.status_code == 422
-
-def test_6_2_validacion_tarea_descripcion_vacia():
-    """Test: Validar que descripción de tarea no puede estar vacía"""
-    response = client.post("/proyectos", json={"nombre": "Proyecto"})
-    proyecto_id = response.json()["id"]
-    
-    response = client.post(f"/proyectos/{proyecto_id}/tareas", json={
-        "descripcion": ""
-    })
-    
-    assert response.status_code == 422
-
-def test_6_3_validacion_estado_invalido():
-    """Test: Validar estados válidos"""
-    response = client.post("/proyectos", json={"nombre": "Proyecto"})
-    proyecto_id = response.json()["id"]
-    
-    response = client.post(f"/proyectos/{proyecto_id}/tareas", json={
-        "descripcion": "Tarea",
-        "estado": "estado_invalido"
-    })
-    
-    assert response.status_code == 422
-
-def test_6_4_validacion_prioridad_invalida():
-    """Test: Validar prioridades válidas"""
-    response = client.post("/proyectos", json={"nombre": "Proyecto"})
-    proyecto_id = response.json()["id"]
-    
-    response = client.post(f"/proyectos/{proyecto_id}/tareas", json={
-        "descripcion": "Tarea",
-        "prioridad": "super_alta"
-    })
-    
-    assert response.status_code == 422
-
-# ============== 7. MANEJO DE ERRORES ESPECÍFICOS ==============
-
-def test_7_1_error_404_proyecto_no_encontrado():
-    """Test: Error 404 cuando proyecto no existe"""
-    response = client.get("/proyectos/999")
-    
-    assert response.status_code == 404
-    data = response.json()
-    assert "detail" in data
-
-def test_7_2_error_404_tarea_no_encontrada():
-    """Test: Error 404 cuando tarea no existe"""
-    response = client.put("/tareas/999", json={
-        "descripcion": "Actualización"
-    })
-    
-    assert response.status_code == 404
-
-def test_7_3_error_400_datos_invalidos():
-    """Test: Error 400 para datos inválidos (proyecto_id inexistente)"""
-    response = client.post("/proyectos/999/tareas", json={
-        "descripcion": "Tarea"
-    })
-    
-    assert response.status_code == 400
-
-def test_7_4_error_409_nombre_duplicado():
-    """Test: Error 409 para conflicto de nombre duplicado"""
-    client.post("/proyectos", json={"nombre": "Proyecto Único"})
-    response = client.post("/proyectos", json={"nombre": "Proyecto Único"})
-    
-    assert response.status_code == 409
-
-# ============== 8. VERIFICACIÓN DE INTEGRIDAD REFERENCIAL ==============
-
-def test_8_1_integridad_crear_proyecto_y_tareas():
-    """Test: Crear proyecto y agregarle varias tareas"""
-    response = client.post("/proyectos", json={"nombre": "Proyecto Integral"})
-    proyecto_id = response.json()["id"]
-    
-    # Agregar múltiples tareas
-    tareas_creadas = []
-    for i in range(5):
-        response = client.post(f"/proyectos/{proyecto_id}/tareas", json={
-            "descripcion": f"Tarea {i+1}"
-        })
-        assert response.status_code == 201
-        tareas_creadas.append(response.json()["id"])
-    
-    # Verificar que todas las tareas existen
-    response = client.get(f"/proyectos/{proyecto_id}/tareas")
-    assert len(response.json()) == 5
-
-def test_8_2_integridad_eliminar_proyecto_elimina_tareas():
-    """Test: Eliminar proyecto elimina sus tareas (CASCADE)"""
-    # Crear proyecto con tareas
-    response = client.post("/proyectos", json={"nombre": "Proyecto a Eliminar"})
-    proyecto_id = response.json()["id"]
-    
-    for i in range(3):
-        client.post(f"/proyectos/{proyecto_id}/tareas", json={
-            "descripcion": f"Tarea {i+1}"
-        })
-    
-    # Verificar que hay 3 tareas
-    response = client.get("/tareas")
-    assert len(response.json()) == 3
-    
-    # Eliminar proyecto
-    client.delete(f"/proyectos/{proyecto_id}")
-    
-    # Verificar que no quedan tareas
-    response = client.get("/tareas")
-    assert len(response.json()) == 0
-
-def test_8_3_integridad_tarea_proyecto_inexistente_falla():
-    """Test: No se puede crear tarea con proyecto_id inexistente"""
-    response = client.post("/proyectos/999/tareas", json={
-        "descripcion": "Tarea huérfana"
-    })
-    
-    assert response.status_code == 400
-
-def test_8_4_integridad_mover_tarea_entre_proyectos():
-    """Test: Modificar proyecto_id de tarea para moverla"""
-    # Crear dos proyectos
-    r1 = client.post("/proyectos", json={"nombre": "Proyecto 1"})
-    r2 = client.post("/proyectos", json={"nombre": "Proyecto 2"})
-    
-    proyecto_id_1 = r1.json()["id"]
-    proyecto_id_2 = r2.json()["id"]
-    
-    # Crear tarea en proyecto 1
-    response = client.post(f"/proyectos/{proyecto_id_1}/tareas", json={
-        "descripcion": "Tarea móvil"
-    })
-    tarea_id = response.json()["id"]
-    
-    # Verificar que está en proyecto 1
-    response = client.get(f"/proyectos/{proyecto_id_1}/tareas")
-    assert len(response.json()) == 1
-    
-    # Mover a proyecto 2
-    response = client.put(f"/tareas/{tarea_id}", json={
-        "proyecto_id": proyecto_id_2
-    })
-    assert response.status_code == 200
-    
-    # Verificar que ahora está en proyecto 2
-    response = client.get(f"/proyectos/{proyecto_id_2}/tareas")
-    assert len(response.json()) == 1
-    
-    # Verificar que ya no está en proyecto 1
-    response = client.get(f"/proyectos/{proyecto_id_1}/tareas")
-    assert len(response.json()) == 0
-
-# ============== TESTS ADICIONALES ==============
-
-def test_9_1_listar_todas_las_tareas():
-    """Test: Listar todas las tareas de todos los proyectos"""
-    # Crear proyectos
-    r1 = client.post("/proyectos", json={"nombre": "Proyecto 1"})
-    r2 = client.post("/proyectos", json={"nombre": "Proyecto 2"})
-    
-    proyecto_id_1 = r1.json()["id"]
-    proyecto_id_2 = r2.json()["id"]
-    
-    # Crear tareas en ambos proyectos
-    client.post(f"/proyectos/{proyecto_id_1}/tareas", json={"descripcion": "Tarea P1"})
-    client.post(f"/proyectos/{proyecto_id_2}/tareas", json={"descripcion": "Tarea P2"})
-    
-    # Listar todas
-    response = client.get("/tareas")
-    
-    assert response.status_code == 200
-    assert len(response.json()) == 2
-
-def test_9_2_filtrar_tareas_por_proyecto_id():
-    """Test: Filtrar tareas por proyecto_id en endpoint /tareas"""
-    r1 = client.post("/proyectos", json={"nombre": "Proyecto 1"})
-    r2 = client.post("/proyectos", json={"nombre": "Proyecto 2"})
-    
-    proyecto_id_1 = r1.json()["id"]
-    proyecto_id_2 = r2.json()["id"]
-    
-    client.post(f"/proyectos/{proyecto_id_1}/tareas", json={"descripcion": "Tarea P1"})
-    client.post(f"/proyectos/{proyecto_id_2}/tareas", json={"descripcion": "Tarea P2"})
-    
-    # Filtrar por proyecto 1
-    response = client.get(f"/tareas?proyecto_id={proyecto_id_1}")
-    
-    assert response.status_code == 200
-    data = response.json()
-    assert len(data) == 1
-    assert data[0]["proyecto_id"] == proyecto_id_1
-
-if __name__ == "__main__":
-    pytest.main([__file__, "-v"])
+#AAAAAAAAAAAAAAAAA
