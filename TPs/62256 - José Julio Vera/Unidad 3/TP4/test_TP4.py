@@ -284,3 +284,4 @@ def test_21_resumen_general_sin_tareas():
     assert resumen["proyecto_con_mas_tareas"]["id"] == 0
 
 #AAAAAAAAAAAAAAAAA
+#aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
